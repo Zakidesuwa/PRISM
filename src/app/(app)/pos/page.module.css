@@ -1,0 +1,295 @@
+.container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f3f4f6;
+  font-family: 'Inter', sans-serif;
+}
+
+.header {
+  padding: 24px 32px;
+  background-color: white;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.title {
+  font-size: 24px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.mainContent {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  padding: 24px 32px;
+  gap: 24px;
+}
+
+.leftPanel {
+  flex: 0 0 65%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.categoryTabs {
+  display: flex;
+  gap: 12px;
+}
+
+.tab {
+  padding: 8px 16px;
+  border-radius: 9999px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #2563EB;
+  background-color: white;
+  color: #2563EB;
+  transition: all 0.2s;
+}
+
+.tabActive {
+  background-color: #2563EB;
+  color: white;
+}
+
+.productGrid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  overflow-y: auto;
+  padding-bottom: 24px;
+}
+
+.productCard {
+  background-color: white;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.productCard:hover {
+  transform: translateY(-2px);
+}
+
+.productCardDisabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.imageArea {
+  height: 120px;
+  background-color: #e0e7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 48px;
+}
+
+.outOfStockBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background-color: #ef4444;
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.productInfo {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.productName {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.productPrice {
+  font-size: 16px;
+  font-weight: 700;
+  color: #2563EB;
+}
+
+.rightPanel {
+  flex: 1;
+  background-color: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.orderHeader {
+  padding: 20px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.orderTitle {
+  font-size: 18px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0;
+}
+
+.orderNumber {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.clearIcon {
+  color: #ef4444;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.orderItems {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.orderItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.itemDetails {
+  flex: 1;
+}
+
+.itemName {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.itemUnitPrice {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.itemControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quantityControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background-color: #f3f4f6;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.qtyButton {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.itemTotal {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  min-width: 60px;
+  text-align: right;
+}
+
+.orderSummary {
+  padding: 20px;
+  background-color: #f9fafb;
+  border-top: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.summaryRow {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: #4b5563;
+}
+
+.summaryTotal {
+  display: flex;
+  justify-content: space-between;
+  font-size: 20px;
+  font-weight: 700;
+  color: #10b981;
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px dashed #e5e7eb;
+}
+
+.payButton {
+  background-color: #0d9488;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 16px;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: background-color 0.2s;
+}
+
+.payButton:hover {
+  background-color: #0f766e;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+}
+
+.pageArrow {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}

@@ -1,0 +1,131 @@
+.wrapper {
+  padding: 1.25rem 1.5rem;
+}
+
+.layout {
+  display: flex;
+  gap: 1rem;
+}
+
+.sidebar {
+  width: 180px;
+}
+
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tab {
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-radius: 8px;
+}
+
+.tabActive {
+  background: #F3F6FB;
+}
+
+.main {
+  flex: 1;
+}
+
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.pageTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.pageSubtitle {
+  margin: 4px 0 0;
+  color: #6B7280;
+}
+
+.card {
+  background: white;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.cardTitle {
+  margin: 0 0 0.75rem 0;
+  font-weight: 700;
+}
+
+.formRow {
+  display: flex;
+  gap: 1rem;
+}
+
+.field {
+  flex: 1;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  color: #6B7280;
+  margin-bottom: 6px;
+}
+
+.input, .select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #E5E7EB;
+}
+
+.prefList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.prefItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: #F8FAFC;
+}
+
+.prefTitle { font-weight: 700; }
+.prefDesc { color: #6B7280; font-size: 0.9rem; }
+
+.toggle { width: 40px; height: 20px; }
+
+.actionsRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.ghostBtn {
+  background: white;
+  border: 1px solid #E5E7EB;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+}
+
+.primaryBtn {
+  background: #2563EB;
+  color: white;
+  padding: 0.5rem 0.9rem;
+  border-radius: 8px;
+  border: none;
+  font-weight: 600;
+}

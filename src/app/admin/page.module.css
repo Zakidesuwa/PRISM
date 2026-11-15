@@ -1,0 +1,852 @@
+.page {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-areas:
+    'stats side'
+    'main  side';
+  align-items: start;
+  gap: 24px;
+}
+
+.statsRow {
+  grid-area: stats;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.mainCol {
+  grid-area: main;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.sideCol {
+  grid-area: side;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+@media (max-width: 1100px) {
+  .page {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'stats' 'main' 'side';
+  }
+
+  .statsRow {
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  }
+}
+
+/* ---------- Shared card shell ---------- */
+
+.statCard,
+.chartCard,
+.performersCard {
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.cardTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.cardMeta {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+/* ---------- Summary stat cards ---------- */
+
+.statCard {
+  padding: 20px;
+}
+
+.statLabelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.statIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gray-700);
+}
+
+.statLabel {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.statValue {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--gray-900);
+  letter-spacing: -0.5px;
+  margin: 0 0 14px;
+}
+
+.statFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.statCaption {
+  font-size: 11px;
+  color: var(--gray-400);
+}
+
+.statChange {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.up {
+  color: var(--success-green);
+}
+
+.down {
+  color: var(--warning-red);
+}
+
+.flat {
+  color: var(--gray-400);
+}
+
+/* ---------- Financial overview chart ---------- */
+
+.chartCard {
+  padding: 20px;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.chartControls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.legendSwatch {
+  width: 22px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.swatchIncome {
+  background-color: var(--primary-blue);
+}
+
+.swatchExpenses {
+  background-color: var(--warning-red);
+}
+
+.selectWrapper {
+  display: inline-flex;
+}
+
+.select {
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--gray-700);
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.select:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px var(--light-blue);
+}
+
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chartWrap {
+  position: relative;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+
+.gridLine {
+  stroke: var(--gray-200);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.axisLabel {
+  fill: var(--gray-400);
+  font-size: 11px;
+}
+
+.incomeLine {
+  fill: none;
+  stroke: var(--primary-blue);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.expenseLine {
+  fill: none;
+  stroke: var(--warning-red);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- Chart hover state ---------- */
+
+.hoverGroup {
+  pointer-events: none;
+}
+
+.guideLine {
+  stroke: var(--gray-400);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.markerIncome {
+  fill: var(--primary-blue);
+  stroke: var(--white);
+  stroke-width: 2;
+}
+
+.markerExpenses {
+  fill: var(--warning-red);
+  stroke: var(--white);
+  stroke-width: 2;
+}
+
+.axisLabelActive {
+  fill: var(--gray-900);
+  font-weight: 600;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 2;
+  min-width: 170px;
+  padding: 10px 12px;
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+}
+
+.tooltipMonth {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gray-900);
+  margin: 0 0 8px;
+}
+
+.tooltipRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--gray-500);
+  margin: 0 0 5px;
+}
+
+.tooltipDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.tooltipValue {
+  margin-left: auto;
+  font-weight: 600;
+  color: var(--gray-900);
+  white-space: nowrap;
+}
+
+.tooltipNet {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--gray-500);
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--gray-200);
+}
+
+/* ---------- Top performers ---------- */
+
+.performersCard {
+  padding: 20px;
+}
+
+.performerList {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+.performer {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.rank {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background-color: var(--light-blue);
+  color: var(--primary-blue);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.performerBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.performerTop {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.performerName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.performerValue {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+  white-space: nowrap;
+}
+
+.performerBottom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.meter {
+  flex: 1;
+  height: 4px;
+  border-radius: 999px;
+  background-color: var(--gray-100);
+  overflow: hidden;
+}
+
+.meterFill {
+  height: 100%;
+  border-radius: 999px;
+  background-color: var(--primary-blue);
+}
+
+.performerChange {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.viewAll {
+  width: 100%;
+  margin-top: 20px;
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary-blue);
+  background-color: var(--light-blue);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.viewAll:hover {
+  background-color: #dbeafe;
+  transform: translateY(-1px);
+}
+
+.performerLink {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-900);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: color 0.15s ease;
+}
+
+.performerLink:hover {
+  color: var(--primary-blue);
+  text-decoration: underline;
+}
+
+/* Modal styles */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+}
+
+.modalContent {
+  width: 100%;
+  max-width: 900px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--white);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--gray-200);
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 28px 16px;
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.modalBadge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--primary-blue);
+  background-color: var(--light-blue);
+  padding: 3px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
+.modalTitle {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gray-900);
+  margin: 0;
+}
+
+.modalSubtitle {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin: 4px 0 0;
+}
+
+.modalCloseBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background-color: var(--gray-100);
+  color: var(--gray-500);
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.modalCloseBtn:hover {
+  background-color: var(--gray-200);
+  color: var(--gray-900);
+}
+
+.modalControls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 28px;
+  background-color: var(--gray-50);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.searchBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 240px;
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  padding: 0 12px;
+
+  svg {
+    color: var(--gray-400);
+    flex-shrink: 0;
+  }
+}
+
+.searchInput {
+  width: 100%;
+  padding: 9px 8px;
+  font-family: inherit;
+  font-size: 13px;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--gray-900);
+}
+
+.clearSearch {
+  background: none;
+  border: none;
+  color: var(--gray-400);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.clearSearch:hover {
+  color: var(--gray-700);
+}
+
+.filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.levelTabs {
+  display: flex;
+  align-items: center;
+  background-color: var(--gray-200);
+  padding: 3px;
+  border-radius: var(--radius-sm);
+  gap: 2px;
+}
+
+.tabBtn {
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gray-700);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.activeTab {
+  background-color: var(--white);
+  color: var(--primary-blue);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+
+.sortSelectWrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sortLabel {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.sortSelect {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--gray-200);
+  background-color: var(--white);
+  color: var(--gray-700);
+  cursor: pointer;
+}
+
+.modalBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.leaderboardTable {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.leaderboardTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background-color: var(--gray-100);
+  padding: 12px 24px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--gray-500);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.leaderboardTable tbody td {
+  padding: 14px 24px;
+  font-size: 13px;
+  color: var(--gray-700);
+  border-bottom: 1px solid var(--gray-100);
+}
+
+.highlightRow {
+  background-color: rgba(37, 99, 235, 0.02);
+}
+
+.modalRankBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rankGold {
+  background-color: #FEF3C7;
+  color: #D97706;
+}
+
+.rankSilver {
+  background-color: #F3F4F6;
+  color: #4B5563;
+}
+
+.rankBronze {
+  background-color: #FFEDD5;
+  color: #C2410C;
+}
+
+.rankStandard {
+  background-color: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.coopNameCell {
+  display: flex;
+  flex-direction: column;
+}
+
+.coopNameText {
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.coopAddressText {
+  font-size: 11px;
+  color: var(--gray-400);
+  margin-top: 2px;
+}
+
+.levelTag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  background-color: var(--gray-100);
+  color: var(--gray-600);
+}
+
+.marginValue {
+  font-weight: 700;
+  color: var(--primary-blue);
+}
+
+.marginSub {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--gray-400);
+  margin-left: 3px;
+}
+
+.profitValue {
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.statusBadge {
+  display: inline-block;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.statusInStock {
+  color: var(--success-green);
+  background-color: #ECFDF5;
+}
+
+.statusLowStock {
+  color: var(--orange);
+  background-color: #FFFBEB;
+}
+
+.statusOut {
+  color: var(--warning-red);
+  background-color: #FEF2F2;
+}
+
+.alignCenter {
+  text-align: center;
+}
+
+.viewDetailBtn {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-blue);
+  background-color: var(--light-blue);
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+}
+
+.viewDetailBtn:hover {
+  background-color: #DBEAFE;
+  transform: translateX(2px);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  color: var(--gray-400);
+  gap: 12px;
+}
+
+.modalFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 28px;
+  background-color: var(--gray-50);
+  border-top: 1px solid var(--gray-200);
+}
+
+.footerSummary {
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.footerActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.directoryLink {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-blue);
+}
+
+.directoryLink:hover {
+  text-decoration: underline;
+}
+
+.closeFooterBtn {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.closeFooterBtn:hover {
+  background-color: var(--gray-100);
+}
+

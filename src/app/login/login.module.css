@@ -1,0 +1,208 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background-color: var(--gray-100);
+  /* Subtle brand wash so the login screen reads as part of PRISM. */
+  background-image: radial-gradient(circle at 50% 0%, var(--light-blue) 0%, var(--gray-100) 55%);
+}
+
+.card {
+  width: 100%;
+  max-width: 400px;
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+  padding: 32px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.seal {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: var(--primary-blue);
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+}
+
+.prismText {
+  font-weight: 700;
+  font-size: 18px;
+  color: var(--primary-blue);
+  line-height: 1.2;
+}
+
+.subText {
+  font-size: 10px;
+  color: var(--gray-500);
+  font-weight: 500;
+  letter-spacing: 0.5px;
+}
+
+.title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--gray-900);
+  text-align: center;
+}
+
+.subtitle {
+  font-size: 14px;
+  color: var(--gray-500);
+  text-align: center;
+  margin-top: 4px;
+  margin-bottom: 24px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--gray-900);
+  background-color: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input::placeholder {
+  color: var(--gray-400);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px var(--light-blue);
+}
+
+.input:disabled {
+  background-color: var(--gray-50);
+  cursor: not-allowed;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--warning-red);
+  background-color: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: var(--radius-sm);
+}
+
+.submit {
+  width: 100%;
+  padding: 12px;
+  margin-top: 4px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--white);
+  background-color: var(--primary-blue);
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s;
+}
+
+.submit:hover:not(:disabled) {
+  background-color: var(--dark-blue);
+}
+
+.submit:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.hint {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--gray-200);
+}
+
+.hintTitle {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  color: var(--gray-400);
+  text-transform: uppercase;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.hintRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--gray-700);
+  background-color: var(--gray-50);
+  border-radius: var(--radius-sm);
+}
+
+.hintRow + .hintRow {
+  margin-top: 8px;
+}
+
+.hintCreds {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--gray-500);
+}
+
+.badge {
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 999px;
+}
+
+.badgeAdmin {
+  color: var(--primary-blue);
+  background-color: var(--light-blue);
+}
+
+.badgeUser {
+  color: #0f766e;
+  background-color: #CCFBF1;
+}
