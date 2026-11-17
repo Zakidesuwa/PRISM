@@ -1,68 +1,45 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
-import { requireRole, requireServerUser } from '@/lib/authGuard';
-import { MemberService, CreateMemberInput, UpdateMemberInput } from '@/services/memberService';
-import { ActionResponse, actionSuccess, actionError } from '@/utils/response';
+import { branchAction } from '@/lib/action';
+import { MemberService, type CreateMemberInput, type UpdateMemberInput } from '@/services/memberService';
 
-/**
- * Server action to fetch cooperative members with search and filter.
- */
-export async function getMembersAction(params?: { branchId?: number; search?: string }): Promise<ActionResponse<any>> {
-  try {
-    await requireServerUser();
-    const members = await MemberService.getAllMembers(params);
-    return actionSuccess(members);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to fetch members.';
-    return actionError(message);
-  }
+const PAGES = ['/members', '/member-lookup', '/pos', '/daily-sales', '/reports', '/dividends'];
+
+export async function createMemberAction(input: CreateMemberInput) {
+  return branchAction(['MANAGER'], (user) => MemberService.create({ branchId: user.branchId, userId: user.id }, input), {
+    revalidate: PAGES,
+    message: (member) => `${member.fullName} registered as a member.`,
+  });
 }
 
-/**
- * Server action to register a new cooperative member.
- * Enforces ADMIN or MANAGER role server-side.
- */
-export async function createMemberAction(data: CreateMemberInput): Promise<ActionResponse<any>> {
-  try {
-    const user = await requireRole(['ADMIN', 'MANAGER']);
-    const member = await MemberService.createMember(data, user.id);
-    
-    revalidatePath('/members');
-    return actionSuccess(member, `Member '${member.fullName}' created successfully!`);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to create member.';
-    return actionError(message);
-  }
+export async function updateMemberAction(id: number, input: UpdateMemberInput) {
+  return branchAction(['MANAGER'], (user) => MemberService.update({ branchId: user.branchId, userId: user.id }, id, input), {
+    revalidate: PAGES,
+    message: (member) => `${member.fullName} updated.`,
+  });
 }
 
-/**
- * Server action to update a cooperative member.
- * Enforces ADMIN or MANAGER role server-side.
- */
-export async function updateMemberAction(id: number, data: UpdateMemberInput): Promise<ActionResponse<any>> {
-  try {
-    const user = await requireRole(['ADMIN', 'MANAGER']);
-    const member = await MemberService.updateMember(id, data, user.id);
-
-    revalidatePath('/members');
-    return actionSuccess(member, `Member '${member.fullName}' updated successfully!`);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to update member.';
-    return actionError(message);
-  }
+export async function addShareCapitalAction(memberId: number, amount: string) {
+  return branchAction(
+    ['MANAGER'],
+    (user) => MemberService.addShareCapital({ branchId: user.branchId, userId: user.id }, memberId, amount),
+    { revalidate: PAGES, message: (member) => `Share capital added for ${member.fullName}.` }
+  );
 }
 
-/**
- * Server action to fetch all school branches for selection.
- */
-export async function getBranchesAction(): Promise<ActionResponse<any>> {
-  try {
-    await requireServerUser();
-    const branches = await MemberService.getAllBranches();
-    return actionSuccess(branches);
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to fetch school branches.';
-    return actionError(message);
-  }
+/** Cashiers collect payments at the till, so they may record them too. */
+export async function recordMemberPaymentAction(memberId: number, amount: string) {
+  return branchAction(
+    ['MANAGER', 'CASHIER'],
+    (user) => MemberService.recordPayment({ branchId: user.branchId, userId: user.id }, memberId, amount),
+    { revalidate: PAGES, message: (member) => `Payment recorded for ${member.fullName}.` }
+  );
+}
+
+export async function getMemberProfileAction(memberId: number) {
+  return branchAction(['MANAGER', 'CASHIER'], async (user) => {
+    const profile = await MemberService.getProfile(user.branchId, memberId);
+    if (!profile) throw new Error('Member not found.');
+    return profile;
+  });
 }

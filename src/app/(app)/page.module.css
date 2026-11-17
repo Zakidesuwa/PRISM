@@ -4,7 +4,53 @@
   color: #333;
 }
 .header {
-  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1.5rem;
+}
+.headerSub {
+  margin-top: 4px;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+.quickActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.quickAction,
+.quickPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: background-color var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.quickAction {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  color: var(--gray-700);
+}
+.quickAction:hover {
+  background: var(--gray-50);
+}
+.quickPrimary {
+  background: var(--color-primary);
+  color: var(--white);
+}
+.quickPrimary:hover {
+  background: var(--color-primary-hover);
+}
+.quickAction:active,
+.quickPrimary:active {
+  transform: scale(0.97);
 }
 .header h1 {
   font-size: 1.5rem;
@@ -69,31 +115,67 @@
 /* Chart */
 .chart {
   display: flex;
-  align-items: flex-end;
   justify-content: space-between;
-  height: 200px;
-  padding-top: 2rem;
   gap: 1rem;
+  padding-top: 0.5rem;
 }
 .barGroup {
   display: flex;
   flex-direction: column;
   align-items: center;
   flex: 1;
-  height: 100%;
+  min-width: 0;
+}
+/* The bars get a fixed-height track of their own, so a bar's percentage
+   height is measured against the same space for every day. */
+.barTrack {
+  position: relative;
+  width: 100%;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
   justify-content: flex-end;
+  align-items: center;
+  border-bottom: 1px solid #e5e7eb;
+}
+.barValue {
+  margin-bottom: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #374151;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 .bar {
   width: 100%;
   max-width: 40px;
-  background-color: #2563EB;
+  flex-shrink: 0;
+  background-color: #93c5fd;
   border-radius: 4px 4px 0 0;
   transition: height 0.3s ease;
 }
+.barToday {
+  background-color: #2563EB;
+}
 .dayLabel {
-  margin-top: 0.75rem;
+  margin-top: 0.5rem;
   font-size: 0.75rem;
   color: #6b7280;
+}
+.dayLabelToday {
+  color: #111827;
+  font-weight: 700;
+}
+.chartFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+}
+.chartFooter strong {
+  color: #111827;
 }
 
 /* Popular Items */

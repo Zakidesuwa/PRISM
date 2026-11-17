@@ -1,158 +1,336 @@
 // src/services/memberService.ts
-import prisma from '@/lib/prisma';
+//
+// Cooperative members and the member ledger (charge balance and share capital).
 import { Prisma } from '@prisma/client';
+import prisma from '@/lib/prisma';
+import { ZERO, num, optionalText, requireText, toAmount } from '@/lib/money';
+import type { Ctx } from './context';
+import { ACCOUNT, AccountingService } from './accountingService';
 import { AuditService } from './auditService';
+
+export interface MemberRow {
+  id: number;
+  memberCode: string;
+  fullName: string;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  shareCapital: number;
+  accumulatedPatronage: number;
+  chargeBalance: number;
+  creditLimit: number;
+  availableCredit: number;
+  joinedAt: string;
+}
+
+export interface MemberProfile extends MemberRow {
+  ledger: {
+    id: number;
+    type: string;
+    amount: number;
+    chargeBalanceAfter: number;
+    shareCapitalAfter: number;
+    reference: string | null;
+    note: string | null;
+    createdAt: string;
+  }[];
+  purchases: {
+    id: string;
+    transactionNumber: string;
+    totalAmount: number;
+    paymentMethod: string;
+    status: string;
+    createdAt: string;
+  }[];
+}
 
 export interface CreateMemberInput {
   memberCode: string;
   fullName: string;
   email?: string;
   phone?: string;
-  branchId: number;
-  shareCapital?: number | string | Prisma.Decimal;
+  shareCapital?: unknown;
+  creditLimit?: unknown;
 }
 
 export interface UpdateMemberInput {
-  fullName?: string;
+  fullName: string;
   email?: string;
   phone?: string;
-  branchId?: number;
-  status?: string;
-  shareCapital?: number | string | Prisma.Decimal;
+  status: string;
+  creditLimit: unknown;
+}
+
+type MemberRecord = Prisma.CoopMemberGetPayload<object>;
+
+function toRow(member: MemberRecord): MemberRow {
+  const available = member.creditLimit.sub(member.chargeBalance);
+  return {
+    id: member.id,
+    memberCode: member.memberCode,
+    fullName: member.fullName,
+    email: member.email,
+    phone: member.phone,
+    status: member.status,
+    shareCapital: num(member.shareCapital),
+    accumulatedPatronage: num(member.accumulatedPatronage),
+    chargeBalance: num(member.chargeBalance),
+    creditLimit: num(member.creditLimit),
+    availableCredit: num(available.lt(0) ? ZERO : available),
+    joinedAt: member.createdAt.toISOString(),
+  };
 }
 
 export class MemberService {
-  /**
-   * Retrieves all cooperative members with optional filtering by school branch and search keyword.
-   */
-  static async getAllMembers(params?: { branchId?: number; search?: string }) {
-    const where: Prisma.CoopMemberWhereInput = {};
-
-    if (params?.branchId) {
-      where.branchId = params.branchId;
-    }
-
-    if (params?.search && params.search.trim() !== '') {
-      const q = params.search.trim();
-      where.OR = [
-        { fullName: { contains: q, mode: 'insensitive' } },
-        { memberCode: { contains: q, mode: 'insensitive' } },
-        { email: { contains: q, mode: 'insensitive' } },
-      ];
-    }
-
-    return await prisma.coopMember.findMany({
-      where,
-      include: {
-        branch: true,
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+  static async list(branchId: number): Promise<MemberRow[]> {
+    const members = await prisma.coopMember.findMany({ where: { branchId }, orderBy: { fullName: 'asc' } });
+    return members.map(toRow);
   }
 
-  /**
-   * Retrieves a member by ID.
-   */
-  static async getMemberById(id: number) {
-    return await prisma.coopMember.findUnique({
-      where: { id },
+  /** Fast lookup for the POS and the member kiosk: exact code, or part of a name. */
+  static async search(branchId: number, query: string): Promise<MemberRow[]> {
+    const q = query.trim();
+    if (!q) return [];
+    const members = await prisma.coopMember.findMany({
+      where: {
+        branchId,
+        OR: [
+          { memberCode: { equals: q, mode: 'insensitive' } },
+          { memberCode: { contains: q, mode: 'insensitive' } },
+          { fullName: { contains: q, mode: 'insensitive' } },
+        ],
+      },
+      orderBy: { fullName: 'asc' },
+      take: 8,
+    });
+    return members.map(toRow);
+  }
+
+  static async getProfile(branchId: number, memberId: number): Promise<MemberProfile | null> {
+    const member = await prisma.coopMember.findFirst({
+      where: { id: memberId, branchId },
       include: {
-        branch: true,
-        transactions: {
-          take: 10,
-          orderBy: { createdAt: 'desc' },
+        ledger: { orderBy: { id: 'desc' }, take: 30 },
+        transactions: { orderBy: { createdAt: 'desc' }, take: 15 },
+      },
+    });
+    if (!member) return null;
+
+    return {
+      ...toRow(member),
+      ledger: member.ledger.map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        amount: num(entry.amount),
+        chargeBalanceAfter: num(entry.chargeBalanceAfter),
+        shareCapitalAfter: num(entry.shareCapitalAfter),
+        reference: entry.reference,
+        note: entry.note,
+        createdAt: entry.createdAt.toISOString(),
+      })),
+      purchases: member.transactions.map((sale) => ({
+        id: sale.id,
+        transactionNumber: sale.transactionNumber,
+        totalAmount: num(sale.totalAmount),
+        paymentMethod: sale.paymentMethod,
+        status: sale.status,
+        createdAt: sale.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  static async create(ctx: Ctx, input: CreateMemberInput): Promise<MemberRow> {
+    const memberCode = requireText(input.memberCode, 'Member code', 40).toUpperCase();
+    const fullName = requireText(input.fullName, 'Full name');
+    const shareCapital = toAmount(input.shareCapital ?? 0, 'Share capital', { allowZero: true });
+
+    return prisma.$transaction(async (tx) => {
+      const branch = await tx.schoolBranch.findUniqueOrThrow({ where: { id: ctx.branchId } });
+      const creditLimit =
+        input.creditLimit === undefined || input.creditLimit === ''
+          ? branch.defaultCreditLimit
+          : toAmount(input.creditLimit, 'Credit limit', { allowZero: true });
+
+      const member = await tx.coopMember.create({
+        data: {
+          branchId: ctx.branchId,
+          memberCode,
+          fullName,
+          email: optionalText(input.email, 120),
+          phone: optionalText(input.phone, 40),
+          shareCapital,
+          creditLimit,
+          ...(ctx.at ? { createdAt: ctx.at } : {}),
         },
-      },
+      });
+
+      if (shareCapital.gt(0)) {
+        await tx.memberLedgerEntry.create({
+          data: {
+            branchId: ctx.branchId,
+            memberId: member.id,
+            type: 'SHARE_CAPITAL',
+            amount: shareCapital,
+            chargeBalanceAfter: ZERO,
+            shareCapitalAfter: shareCapital,
+            note: 'Initial share capital',
+            userId: ctx.userId,
+            ...(ctx.at ? { createdAt: ctx.at } : {}),
+          },
+        });
+        await AccountingService.postEntry(tx, ctx, {
+          description: `Share capital: ${fullName}`,
+          sourceType: 'SHARE_CAPITAL',
+          sourceId: member.id,
+          lines: [
+            { code: ACCOUNT.CASH, debit: shareCapital },
+            { code: ACCOUNT.SHARE_CAPITAL, credit: shareCapital },
+          ],
+        });
+      }
+
+      await AuditService.log(
+        {
+          branchId: ctx.branchId,
+          userId: ctx.userId,
+          action: 'MEMBER_CREATE',
+          entityType: 'CoopMember',
+          entityId: member.id,
+          details: { memberCode },
+          at: ctx.at,
+        },
+        tx
+      );
+
+      return toRow(member);
     });
   }
 
-  /**
-   * Retrieves a member by member code (used for fast lookup in POS).
-   */
-  static async getMemberByCode(memberCode: string) {
-    return await prisma.coopMember.findUnique({
-      where: { memberCode },
-      include: {
-        branch: true,
-      },
-    });
-  }
-
-  /**
-   * Registers a new cooperative member.
-   */
-  static async createMember(data: CreateMemberInput, actorUserId?: string) {
-    const shareCapital = data.shareCapital
-      ? new Prisma.Decimal(data.shareCapital.toString())
-      : new Prisma.Decimal('0.00');
-
-    const member = await prisma.coopMember.create({
-      data: {
-        memberCode: data.memberCode,
-        fullName: data.fullName,
-        email: data.email ?? null,
-        phone: data.phone ?? null,
-        branchId: data.branchId,
-        shareCapital,
-        accumulatedPatronage: new Prisma.Decimal('0.00'),
-        status: 'ACTIVE',
-      },
-      include: {
-        branch: true,
-      },
-    });
-
-    await AuditService.log({
-      userId: actorUserId,
-      action: 'MEMBER_CREATE',
-      entityType: 'CoopMember',
-      entityId: member.id,
-      details: { memberCode: member.memberCode, branch: member.branch.name },
-    });
-
-    return member;
-  }
-
-  /**
-   * Updates an existing member profile.
-   */
-  static async updateMember(id: number, data: UpdateMemberInput, actorUserId?: string) {
-    const updateData: Prisma.CoopMemberUpdateInput = {};
-
-    if (data.fullName !== undefined) updateData.fullName = data.fullName;
-    if (data.email !== undefined) updateData.email = data.email;
-    if (data.phone !== undefined) updateData.phone = data.phone;
-    if (data.status !== undefined) updateData.status = data.status;
-    if (data.branchId !== undefined) {
-      updateData.branch = { connect: { id: data.branchId } };
-    }
-    if (data.shareCapital !== undefined) {
-      updateData.shareCapital = new Prisma.Decimal(data.shareCapital.toString());
-    }
+  static async update(ctx: Ctx, id: number, input: UpdateMemberInput): Promise<MemberRow> {
+    const existing = await prisma.coopMember.findFirst({ where: { id, branchId: ctx.branchId } });
+    if (!existing) throw new Error('Member not found.');
+    if (input.status !== 'ACTIVE' && input.status !== 'INACTIVE') throw new Error('Choose a status.');
 
     const member = await prisma.coopMember.update({
       where: { id },
-      data: updateData,
-      include: { branch: true },
+      data: {
+        fullName: requireText(input.fullName, 'Full name'),
+        email: optionalText(input.email, 120),
+        phone: optionalText(input.phone, 40),
+        status: input.status,
+        creditLimit: toAmount(input.creditLimit, 'Credit limit', { allowZero: true }),
+      },
     });
-
     await AuditService.log({
-      userId: actorUserId,
+      branchId: ctx.branchId,
+      userId: ctx.userId,
       action: 'MEMBER_UPDATE',
       entityType: 'CoopMember',
-      entityId: member.id,
-      details: data,
+      entityId: id,
+      details: { status: member.status, creditLimit: member.creditLimit.toFixed(2) },
     });
-
-    return member;
+    return toRow(member);
   }
 
-  /**
-   * Retrieves all school branches (cooperatives) for dropdown selection.
-   */
-  static async getAllBranches() {
-    return await prisma.schoolBranch.findMany({
-      orderBy: { name: 'asc' },
+  /** A member pays cash into their share capital. */
+  static async addShareCapital(ctx: Ctx, memberId: number, amountInput: unknown): Promise<MemberRow> {
+    const amount = toAmount(amountInput, 'Amount');
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.coopMember.findFirst({ where: { id: memberId, branchId: ctx.branchId } });
+      if (!existing) throw new Error('Member not found.');
+
+      const member = await tx.coopMember.update({
+        where: { id: memberId },
+        data: { shareCapital: { increment: amount } },
+      });
+      await tx.memberLedgerEntry.create({
+        data: {
+          branchId: ctx.branchId,
+          memberId,
+          type: 'SHARE_CAPITAL',
+          amount,
+          chargeBalanceAfter: member.chargeBalance,
+          shareCapitalAfter: member.shareCapital,
+          note: 'Additional share capital',
+          userId: ctx.userId,
+          ...(ctx.at ? { createdAt: ctx.at } : {}),
+        },
+      });
+      await AccountingService.postEntry(tx, ctx, {
+        description: `Share capital: ${member.fullName}`,
+        sourceType: 'SHARE_CAPITAL',
+        sourceId: memberId,
+        lines: [
+          { code: ACCOUNT.CASH, debit: amount },
+          { code: ACCOUNT.SHARE_CAPITAL, credit: amount },
+        ],
+      });
+      await AuditService.log(
+        {
+          branchId: ctx.branchId,
+          userId: ctx.userId,
+          action: 'MEMBER_SHARE_CAPITAL',
+          entityType: 'CoopMember',
+          entityId: memberId,
+          details: { amount: amount.toFixed(2) },
+          at: ctx.at,
+        },
+        tx
+      );
+      return toRow(member);
+    });
+  }
+
+  /** A member pays cash against what they owe from charge sales. */
+  static async recordPayment(ctx: Ctx, memberId: number, amountInput: unknown): Promise<MemberRow> {
+    const amount = toAmount(amountInput, 'Payment');
+
+    return prisma.$transaction(async (tx) => {
+      const existing = await tx.coopMember.findFirst({ where: { id: memberId, branchId: ctx.branchId } });
+      if (!existing) throw new Error('Member not found.');
+      if (amount.gt(existing.chargeBalance)) {
+        throw new Error(`${existing.fullName} only owes ₱${existing.chargeBalance.toFixed(2)}.`);
+      }
+
+      const member = await tx.coopMember.update({
+        where: { id: memberId },
+        data: { chargeBalance: { decrement: amount } },
+      });
+      const entry = await tx.memberLedgerEntry.create({
+        data: {
+          branchId: ctx.branchId,
+          memberId,
+          type: 'PAYMENT',
+          amount,
+          chargeBalanceAfter: member.chargeBalance,
+          shareCapitalAfter: member.shareCapital,
+          userId: ctx.userId,
+          ...(ctx.at ? { createdAt: ctx.at } : {}),
+        },
+      });
+      await AccountingService.postEntry(tx, ctx, {
+        description: `Payment on account: ${member.fullName}`,
+        sourceType: 'MEMBER_PAYMENT',
+        sourceId: entry.id,
+        lines: [
+          { code: ACCOUNT.CASH, debit: amount },
+          { code: ACCOUNT.RECEIVABLE, credit: amount },
+        ],
+      });
+      await AuditService.log(
+        {
+          branchId: ctx.branchId,
+          userId: ctx.userId,
+          action: 'MEMBER_PAYMENT',
+          entityType: 'CoopMember',
+          entityId: memberId,
+          details: { amount: amount.toFixed(2) },
+          at: ctx.at,
+        },
+        tx
+      );
+      return toRow(member);
     });
   }
 }

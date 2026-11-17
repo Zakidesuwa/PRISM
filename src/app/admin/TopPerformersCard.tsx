@@ -1,9 +1,9 @@
 'use client';
 
+import { Search } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { topPerformers } from '@/data/adminMockData';
-import { cooperatives } from '@/data/cooperativeMockData';
+import type { LeaderboardItem } from '@/lib/adminTypes';
 import styles from './page.module.css';
 
 function formatPeso(amount: number, fractionDigits = 2) {
@@ -13,26 +13,16 @@ function formatPeso(amount: number, fractionDigits = 2) {
   })}`;
 }
 
-// Convert mock cooperatives to leaderboard performers
-const allLeaderboardItems = cooperatives.slice(0, 15).map((coop, index) => ({
-  rank: index + 1,
-  id: coop.id,
-  name: coop.name,
-  address: coop.address,
-  level: coop.level,
-  monthlyProfit: coop.monthlyProfit,
-  netMargin: Math.round((3.5 - index * 0.18 + Math.sin(index) * 0.3) * 100) / 100,
-  change: Math.round((5.2 - index * 0.4) * 10) / 10,
-  stockStatus: coop.stockStatus,
-}));
 
-export default function TopPerformersCard() {
+export default function TopPerformersCard({ leaderboard: allLeaderboardItems }: { leaderboard: LeaderboardItem[] }) {
+  const topPerformers = allLeaderboardItems.slice(0, 4);
+  const cooperatives = allLeaderboardItems;
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLevel, setSelectedLevel] = useState<string>('All');
   const [sortBy, setSortBy] = useState<'rank' | 'profit' | 'margin'>('rank');
 
-  const maxMargin = Math.max(...topPerformers.map((p) => p.netMargin));
+  const maxMargin = Math.max(0.01, ...topPerformers.map((p) => p.netMargin));
 
   // Lock background scroll when modal is open
   useEffect(() => {
@@ -170,10 +160,7 @@ export default function TopPerformersCard() {
             {/* Filter and Search Bar */}
             <div className={styles.modalControls}>
               <div className={styles.searchBox}>
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
+                <Search size={15} aria-hidden="true" />
                 <input
                   type="text"
                   placeholder="Search cooperative by name or address..."
@@ -225,9 +212,7 @@ export default function TopPerformersCard() {
             <div className={styles.modalBody}>
               {filteredItems.length === 0 ? (
                 <div className={styles.emptyState}>
-                  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" />
-                  </svg>
+                  <Search size={40} strokeWidth={1.5} aria-hidden="true" />
                   <p>No cooperatives match your search &quot;{searchQuery}&quot;</p>
                 </div>
               ) : (

@@ -1,7 +1,17 @@
 // src/services/transactionService.ts
+//
+// POS checkout engine. One database transaction per sale: stock, the member
+// ledger, the sale record and the general ledger all commit or roll back together.
 import prisma from '@/lib/prisma';
-import { Prisma } from '@prisma/client';
+import { D, ZERO, num, optionalText, round2, toAmount, type Dec } from '@/lib/money';
+import type { DateRange } from '@/lib/dates';
+import type { Ctx } from './context';
+import { ACCOUNT, AccountingService } from './accountingService';
 import { AuditService } from './auditService';
+import { InventoryService } from './inventoryService';
+import { SettingsService } from './settingsService';
+
+export type PaymentMethod = 'CASH' | 'CHARGE' | 'GCASH';
 
 export interface CheckoutCartItem {
   productId: number;
@@ -9,277 +19,391 @@ export interface CheckoutCartItem {
 }
 
 export interface ProcessCheckoutInput {
-  cashierId: string;
-  memberId?: number | null;
   items: CheckoutCartItem[];
+  memberId?: number | null;
+  paymentMethod: PaymentMethod;
+  /** Cash handed over by the customer. Required for CASH. */
+  amountTendered?: unknown;
+  /** E-wallet reference number. Required for GCASH. */
+  paymentReference?: string;
 }
 
-export interface CheckoutResult {
-  transactionId: string;
+export interface Receipt {
+  id: string;
   transactionNumber: string;
-  subtotal: string;
-  taxAmount: string;
-  totalAmount: string;
-  itemCount: number;
-  memberPatronageCredited?: string;
+  createdAt: string;
+  status: string;
+  cashierName: string;
+  memberName: string | null;
+  memberCode: string | null;
+  items: { name: string; quantity: number; unitPrice: number; subtotal: number }[];
+  subtotal: number;
+  taxAmount: number;
+  totalAmount: number;
+  paymentMethod: string;
+  amountTendered: number | null;
+  changeAmount: number | null;
+  paymentReference: string | null;
+  voidReason: string | null;
+}
+
+const PAYMENT_ACCOUNT: Record<PaymentMethod, string> = {
+  CASH: ACCOUNT.CASH,
+  CHARGE: ACCOUNT.RECEIVABLE,
+  GCASH: ACCOUNT.EWALLET,
+};
+
+const receiptInclude = {
+  cashier: { select: { name: true } },
+  member: { select: { fullName: true, memberCode: true } },
+  items: { orderBy: { id: 'asc' as const } },
+};
+
+type ReceiptSource = {
+  id: string;
+  transactionNumber: string;
   createdAt: Date;
+  status: string;
+  cashier: { name: string };
+  member: { fullName: string; memberCode: string } | null;
+  items: { productName: string; quantity: number; unitPrice: Dec; subtotal: Dec }[];
+  subtotal: Dec;
+  taxAmount: Dec;
+  totalAmount: Dec;
+  paymentMethod: string;
+  amountTendered: Dec | null;
+  changeAmount: Dec | null;
+  paymentReference: string | null;
+  voidReason: string | null;
+};
+
+function toReceipt(sale: ReceiptSource): Receipt {
+  return {
+    id: sale.id,
+    transactionNumber: sale.transactionNumber,
+    createdAt: sale.createdAt.toISOString(),
+    status: sale.status,
+    cashierName: sale.cashier.name,
+    memberName: sale.member?.fullName ?? null,
+    memberCode: sale.member?.memberCode ?? null,
+    items: sale.items.map((item) => ({
+      name: item.productName,
+      quantity: item.quantity,
+      unitPrice: num(item.unitPrice),
+      subtotal: num(item.subtotal),
+    })),
+    subtotal: num(sale.subtotal),
+    taxAmount: num(sale.taxAmount),
+    totalAmount: num(sale.totalAmount),
+    paymentMethod: sale.paymentMethod,
+    amountTendered: sale.amountTendered ? num(sale.amountTendered) : null,
+    changeAmount: sale.changeAmount ? num(sale.changeAmount) : null,
+    paymentReference: sale.paymentReference,
+    voidReason: sale.voidReason,
+  };
 }
 
 export class TransactionService {
-  /**
-   * Generates a unique transaction number (e.g. #1049).
-   */
-  private static async generateTransactionNumber(tx: Prisma.TransactionClient): Promise<string> {
-    const count = await tx.transaction.count();
-    const nextSeq = 1001 + count;
-    return `#${nextSeq}`;
-  }
+  static async processCheckout(ctx: Ctx, input: ProcessCheckoutInput): Promise<Receipt> {
+    const { items, paymentMethod } = input;
+    const memberId = input.memberId ?? null;
 
-  /**
-   * Atomically processes a POS checkout transaction (ACID via prisma.$transaction).
-   */
-  static async processCheckout(input: ProcessCheckoutInput): Promise<CheckoutResult> {
-    const { cashierId, memberId, items } = input;
+    if (!items || items.length === 0) throw new Error('The cart is empty.');
+    if (!(paymentMethod in PAYMENT_ACCOUNT)) throw new Error('Choose a payment method.');
 
-    if (!items || items.length === 0) {
-      throw new Error('Cart is empty. Please add items to checkout.');
+    // Merge duplicate lines so each product is checked once.
+    const quantities = new Map<number, number>();
+    for (const item of items) {
+      if (!Number.isInteger(item.quantity) || item.quantity <= 0) {
+        throw new Error('Quantities must be whole numbers greater than zero.');
+      }
+      quantities.set(item.productId, (quantities.get(item.productId) ?? 0) + item.quantity);
     }
 
-    // Execute everything in a single atomic database transaction
-    return await prisma.$transaction(async (tx) => {
-      // 1. Verify Cashier
-      const cashier = await tx.user.findUnique({
-        where: { id: cashierId },
-      });
-      if (!cashier) {
-        throw new Error(`Cashier with ID '${cashierId}' was not found.`);
-      }
+    const settings = await SettingsService.get();
+    const taxRate = D(settings.taxes.taxRate).div(100);
 
-      // 2. Fetch and lock products
-      const productIds = items.map((i) => i.productId);
-      const dbProducts = await tx.product.findMany({
-        where: { id: { in: productIds } },
-        include: {
-          ingredients: {
-            include: {
-              inventoryItem: true,
-            },
-          },
-        },
-      });
-
-      if (dbProducts.length !== productIds.length) {
-        throw new Error('One or more products in your cart do not exist.');
-      }
-
-      const productMap = new Map(dbProducts.map((p) => [p.id, p]));
-
-      // 3. Validate product stock and compute recipe ingredient requirements
-      let subtotalAcc = new Prisma.Decimal('0.00');
-      const transactionItemsData: {
-        productId: number;
-        quantity: number;
-        unitPrice: Prisma.Decimal;
-        subtotal: Prisma.Decimal;
-      }[] = [];
-
-      // Map of inventoryItemId -> aggregated quantity required (Decimal)
-      const rawIngredientNeeds = new Map<number, { item: typeof dbProducts[0]['ingredients'][0]['inventoryItem']; totalQty: Prisma.Decimal }>();
-
-      for (const cartItem of items) {
-        if (cartItem.quantity <= 0) {
-          throw new Error('Quantity must be greater than zero.');
+    return prisma.$transaction(
+      async (tx) => {
+        // 1. Products, with the inventory items each one uses.
+        const products = await tx.product.findMany({
+          where: { id: { in: [...quantities.keys()] }, branchId: ctx.branchId, isActive: true },
+          include: { vendor: true, ingredients: { include: { inventoryItem: true } } },
+        });
+        if (products.length !== quantities.size) {
+          throw new Error('A product in the cart is no longer available. Refresh and try again.');
         }
 
-        const product = productMap.get(cartItem.productId)!;
+        // 2. Price each line and work out the stock it needs.
+        let subtotal = ZERO;
+        let costOfGoods = ZERO;
+        let ownSales = ZERO;
+        let vendorShareTotal = ZERO;
+        let commissionTotal = ZERO;
+        const needs = new Map<number, Dec>();
+        const lines = products.map((product) => {
+          const quantity = quantities.get(product.id)!;
+          const lineSubtotal = round2(product.price.mul(quantity));
+          subtotal = subtotal.add(lineSubtotal);
 
-        // Check product stock
-        if (product.stock < cartItem.quantity) {
-          throw new Error(
-            `Insufficient stock for product '${product.name}'. Available: ${product.stock}, Requested: ${cartItem.quantity}`
-          );
-        }
+          for (const part of product.ingredients) {
+            const needed = part.quantityRequired.mul(quantity);
+            needs.set(part.inventoryItemId, (needs.get(part.inventoryItemId) ?? ZERO).add(needed));
+          }
 
-        // Calculate item subtotal
-        const itemQtyDec = new Prisma.Decimal(cartItem.quantity);
-        const itemSubtotal = product.price.mul(itemQtyDec);
-        subtotalAcc = subtotalAcc.add(itemSubtotal);
+          let unitCost = ZERO;
+          let vendorShare = ZERO;
+          let commission = ZERO;
+          if (product.vendor) {
+            // Consigned goods: the cooperative earns a commission, not the sale.
+            commission = round2(lineSubtotal.mul(product.vendor.commissionBps).div(10000));
+            vendorShare = lineSubtotal.sub(commission);
+            vendorShareTotal = vendorShareTotal.add(vendorShare);
+            commissionTotal = commissionTotal.add(commission);
+          } else {
+            unitCost = product.ingredients.reduce(
+              (sum, part) => sum.add(part.quantityRequired.mul(part.inventoryItem.unitCost)),
+              ZERO
+            );
+            costOfGoods = costOfGoods.add(unitCost.mul(quantity));
+            ownSales = ownSales.add(lineSubtotal);
+          }
 
-        transactionItemsData.push({
-          productId: product.id,
-          quantity: cartItem.quantity,
-          unitPrice: product.price,
-          subtotal: itemSubtotal,
+          return {
+            productId: product.id,
+            productName: product.name,
+            category: product.category,
+            quantity,
+            unitPrice: product.price,
+            unitCost: unitCost.toDecimalPlaces(4),
+            subtotal: lineSubtotal,
+            vendorId: product.vendorId,
+            vendorShare,
+            commission,
+          };
         });
 
-        // Accumulate recipe ingredients
-        for (const recipe of product.ingredients) {
-          const invId = recipe.inventoryItemId;
-          const neededPerUnit = recipe.quantityRequired;
-          const totalNeeded = neededPerUnit.mul(itemQtyDec);
+        costOfGoods = round2(costOfGoods);
+        const taxAmount = round2(subtotal.mul(taxRate));
+        const totalAmount = subtotal.add(taxAmount);
 
-          const existing = rawIngredientNeeds.get(invId);
-          if (existing) {
-            existing.totalQty = existing.totalQty.add(totalNeeded);
-          } else {
-            rawIngredientNeeds.set(invId, {
-              item: recipe.inventoryItem,
-              totalQty: totalNeeded,
+        // 3. Payment.
+        let amountTendered: Dec | null = null;
+        let changeAmount: Dec | null = null;
+        let paymentReference: string | null = null;
+
+        if (paymentMethod === 'CASH') {
+          amountTendered = toAmount(input.amountTendered, 'Cash received');
+          if (amountTendered.lt(totalAmount)) {
+            throw new Error(
+              `Cash received (₱${amountTendered.toFixed(2)}) is less than the total (₱${totalAmount.toFixed(2)}).`
+            );
+          }
+          changeAmount = amountTendered.sub(totalAmount);
+        } else if (paymentMethod === 'GCASH') {
+          paymentReference = optionalText(input.paymentReference, 40);
+          if (!paymentReference) throw new Error('Enter the GCash reference number.');
+        } else if (memberId === null) {
+          throw new Error('A charge sale needs a cooperative member.');
+        }
+
+        // 4. Number the sale. The increment locks the branch row, so two
+        //    simultaneous sales can never get the same number.
+        const branch = await tx.schoolBranch.update({
+          where: { id: ctx.branchId },
+          data: { nextTransactionSeq: { increment: 1 } },
+        });
+        const transactionNumber = `#${branch.nextTransactionSeq - 1}`;
+
+        // 5. Member: credit patronage, and the charge balance for credit sales.
+        if (memberId !== null) {
+          const member = await tx.coopMember.findFirst({ where: { id: memberId, branchId: ctx.branchId } });
+          if (!member) throw new Error('Member not found.');
+          if (member.status !== 'ACTIVE') throw new Error(`${member.fullName} is not an active member.`);
+
+          if (paymentMethod === 'CHARGE') {
+            const newBalance = member.chargeBalance.add(totalAmount);
+            if (newBalance.gt(member.creditLimit)) {
+              const availableCredit = member.creditLimit.sub(member.chargeBalance);
+              throw new Error(
+                `Over the credit limit. ${member.fullName} has ₱${availableCredit.toFixed(2)} of credit left.`
+              );
+            }
+            await tx.memberLedgerEntry.create({
+              data: {
+                branchId: ctx.branchId,
+                memberId,
+                type: 'CHARGE',
+                amount: totalAmount,
+                chargeBalanceAfter: newBalance,
+                shareCapitalAfter: member.shareCapital,
+                reference: transactionNumber,
+                userId: ctx.userId,
+                ...(ctx.at ? { createdAt: ctx.at } : {}),
+              },
+            });
+          }
+
+          await tx.coopMember.update({
+            where: { id: memberId },
+            data: {
+              accumulatedPatronage: { increment: totalAmount },
+              ...(paymentMethod === 'CHARGE' ? { chargeBalance: { increment: totalAmount } } : {}),
+            },
+          });
+        }
+
+        // 6. The sale itself.
+        const sale = await tx.transaction.create({
+          data: {
+            branchId: ctx.branchId,
+            transactionNumber,
+            cashierId: ctx.userId!,
+            memberId,
+            subtotal,
+            taxAmount,
+            totalAmount,
+            costOfGoods,
+            paymentMethod,
+            amountTendered,
+            changeAmount,
+            paymentReference,
+            status: 'COMPLETED',
+            ...(ctx.at ? { createdAt: ctx.at } : {}),
+            items: { create: lines },
+          },
+          include: receiptInclude,
+        });
+
+        // 7. Stock out of inventory.
+        await InventoryService.deductForSale(tx, ctx, needs, sale.id);
+
+        // 8. General ledger. Cost of goods is a separate entry so that entries
+        //    touching cash contain only cash-related lines (see cashFlow()).
+        await AccountingService.postEntry(tx, ctx, {
+          description: `Sale ${transactionNumber} (${paymentMethod})`,
+          sourceType: 'SALE',
+          sourceId: sale.id,
+          lines: [
+            { code: PAYMENT_ACCOUNT[paymentMethod], debit: totalAmount },
+            { code: ACCOUNT.SALES, credit: ownSales },
+            { code: ACCOUNT.COMMISSION, credit: commissionTotal },
+            { code: ACCOUNT.CONSIGNORS, credit: vendorShareTotal },
+            { code: ACCOUNT.TAX_PAYABLE, credit: taxAmount },
+          ],
+        });
+        await AccountingService.postEntry(tx, ctx, {
+          description: `Cost of goods sold ${transactionNumber}`,
+          sourceType: 'COGS',
+          sourceId: sale.id,
+          lines: [
+            { code: ACCOUNT.COGS, debit: costOfGoods },
+            { code: ACCOUNT.INVENTORY, credit: costOfGoods },
+          ],
+        });
+
+        await AuditService.log(
+          {
+            branchId: ctx.branchId,
+            userId: ctx.userId,
+            action: 'POS_CHECKOUT',
+            entityType: 'Transaction',
+            entityId: sale.id,
+            details: { transactionNumber, totalAmount: totalAmount.toFixed(2), paymentMethod, memberId },
+            at: ctx.at,
+          },
+          tx
+        );
+
+        return toReceipt(sale);
+      },
+      { timeout: 20000 }
+    );
+  }
+
+  /** Cancels a completed sale: stock, member balances and the ledger are all reversed. */
+  static async voidTransaction(ctx: Ctx, transactionId: string, reason: string): Promise<Receipt> {
+    const voidReason = optionalText(reason, 200);
+    if (!voidReason) throw new Error('Give a reason for voiding this sale.');
+
+    return prisma.$transaction(
+      async (tx) => {
+        const sale = await tx.transaction.findFirst({ where: { id: transactionId, branchId: ctx.branchId } });
+        if (!sale) throw new Error('Sale not found.');
+        if (sale.status !== 'COMPLETED') throw new Error('This sale has already been voided.');
+
+        await InventoryService.returnFromVoid(tx, ctx, sale.id);
+
+        if (sale.memberId !== null) {
+          const member = await tx.coopMember.update({
+            where: { id: sale.memberId },
+            data: {
+              accumulatedPatronage: { decrement: sale.totalAmount },
+              ...(sale.paymentMethod === 'CHARGE' ? { chargeBalance: { decrement: sale.totalAmount } } : {}),
+            },
+          });
+          if (sale.paymentMethod === 'CHARGE') {
+            await tx.memberLedgerEntry.create({
+              data: {
+                branchId: ctx.branchId,
+                memberId: sale.memberId,
+                type: 'VOID',
+                amount: sale.totalAmount,
+                chargeBalanceAfter: member.chargeBalance,
+                shareCapitalAfter: member.shareCapital,
+                reference: sale.transactionNumber,
+                note: voidReason,
+                userId: ctx.userId,
+              },
             });
           }
         }
-      }
 
-      // 4. Validate and deduct raw inventory items
-      for (const [invId, need] of rawIngredientNeeds.entries()) {
-        const invItem = await tx.inventoryItem.findUnique({
-          where: { id: invId },
+        await AccountingService.reverseEntries(tx, ctx, {
+          sourceTypes: ['SALE', 'COGS'],
+          sourceId: sale.id,
+          description: `Void ${sale.transactionNumber}`,
+          reversalType: 'VOID',
         });
 
-        if (!invItem) {
-          throw new Error(`Raw material '${need.item.name}' was not found in inventory.`);
-        }
-
-        if (invItem.stock.lessThan(need.totalQty)) {
-          throw new Error(
-            `Insufficient raw inventory for '${invItem.name}'. Available: ${invItem.stock.toFixed(3)} ${invItem.unit}, Needed for order: ${need.totalQty.toFixed(3)} ${invItem.unit}`
-          );
-        }
-
-        const newStock = invItem.stock.sub(need.totalQty);
-        let newStatus = invItem.status;
-        if (newStock.isZero()) {
-          newStatus = 'Empty';
-        } else if (newStock.lessThanOrEqualTo(new Prisma.Decimal('5.000'))) {
-          newStatus = 'Low Stock';
-        }
-
-        await tx.inventoryItem.update({
-          where: { id: invId },
-          data: {
-            stock: newStock,
-            status: newStatus,
-          },
-        });
-      }
-
-      // 5. Deduct product finished goods stock
-      for (const cartItem of items) {
-        await tx.product.update({
-          where: { id: cartItem.productId },
-          data: {
-            stock: {
-              decrement: cartItem.quantity,
-            },
-          },
-        });
-      }
-
-      // 6. Compute 5% Tax and Total Amount
-      // 5% tax = subtotal * 0.05
-      const taxRate = new Prisma.Decimal('0.05');
-      const taxAmount = subtotalAcc.mul(taxRate).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-      const totalAmount = subtotalAcc.add(taxAmount).toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
-
-      // 7. Verify and credit Coop Member (if attached)
-      let creditedMemberPatronage: Prisma.Decimal | undefined;
-      if (memberId) {
-        const member = await tx.coopMember.findUnique({
-          where: { id: memberId },
+        const voided = await tx.transaction.update({
+          where: { id: sale.id },
+          data: { status: 'VOIDED', voidedAt: new Date(), voidedById: ctx.userId, voidReason },
+          include: receiptInclude,
         });
 
-        if (!member) {
-          throw new Error(`Coop Member with ID '${memberId}' does not exist.`);
-        }
-
-        if (member.status !== 'ACTIVE') {
-          throw new Error(`Coop Member '${member.fullName}' is not active.`);
-        }
-
-        // Credit member accumulated patronage with total transaction amount
-        const updatedMember = await tx.coopMember.update({
-          where: { id: memberId },
-          data: {
-            accumulatedPatronage: {
-              increment: totalAmount,
-            },
+        await AuditService.log(
+          {
+            branchId: ctx.branchId,
+            userId: ctx.userId,
+            action: 'POS_VOID',
+            entityType: 'Transaction',
+            entityId: sale.id,
+            details: { transactionNumber: sale.transactionNumber, reason: voidReason },
           },
-        });
+          tx
+        );
 
-        creditedMemberPatronage = updatedMember.accumulatedPatronage;
-      }
-
-      // 8. Create Transaction and Transaction Items
-      const transactionNumber = await this.generateTransactionNumber(tx);
-
-      const createdTx = await tx.transaction.create({
-        data: {
-          transactionNumber,
-          cashierId,
-          memberId: memberId ?? null,
-          subtotal: subtotalAcc.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
-          taxAmount,
-          totalAmount,
-          paymentMethod: 'CASH', // Cash only enforced
-          status: 'COMPLETED',
-          items: {
-            create: transactionItemsData.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              subtotal: item.subtotal.toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP),
-            })),
-          },
-        },
-      });
-
-      // 9. Write to AuditLog
-      await AuditService.log(
-        {
-          userId: cashierId,
-          action: 'POS_CHECKOUT',
-          entityType: 'Transaction',
-          entityId: createdTx.id,
-          details: {
-            transactionNumber,
-            totalAmount: totalAmount.toString(),
-            itemCount: items.length,
-            memberId: memberId ?? null,
-            paymentMethod: 'CASH',
-          },
-        },
-        tx
-      );
-
-      return {
-        transactionId: createdTx.id,
-        transactionNumber: createdTx.transactionNumber,
-        subtotal: subtotalAcc.toFixed(2),
-        taxAmount: taxAmount.toFixed(2),
-        totalAmount: totalAmount.toFixed(2),
-        itemCount: items.reduce((acc, i) => acc + i.quantity, 0),
-        memberPatronageCredited: creditedMemberPatronage?.toFixed(2),
-        createdAt: createdTx.createdAt,
-      };
-    });
+        return toReceipt(voided);
+      },
+      { timeout: 20000 }
+    );
   }
 
-  /**
-   * Retrieves recent transactions for dashboard / analytics.
-   */
-  static async getRecentTransactions(limit = 10) {
-    return await prisma.transaction.findMany({
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: {
-        cashier: { select: { name: true, username: true } },
-        member: { select: { fullName: true, memberCode: true } },
-        items: {
-          include: {
-            product: { select: { name: true, sku: true } },
-          },
-        },
+  static async list(
+    branchId: number,
+    options: { range?: DateRange; cashierId?: string; take?: number } = {}
+  ): Promise<Receipt[]> {
+    const sales = await prisma.transaction.findMany({
+      where: {
+        branchId,
+        ...(options.cashierId ? { cashierId: options.cashierId } : {}),
+        ...(options.range ? { createdAt: { gte: options.range.from, lt: options.range.to } } : {}),
       },
+      orderBy: { createdAt: 'desc' },
+      take: options.take ?? 50,
+      include: receiptInclude,
     });
+    return sales.map(toReceipt);
   }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef, useState } from 'react';
-import type { DayTurnover } from '@/data/cooperativeDetailData';
+import type { DayTurnover } from '@/lib/adminTypes';
 import styles from './page.module.css';
 
 const W = 640;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { ProductCategory, ProductLine, ProductStatus } from '@/data/cooperativeDetailData';
+import type { ProductCategory, ProductLine, ProductStatus } from '@/lib/adminTypes';
 import styles from './page.module.css';
 
 const INITIAL_ROWS = 5;
@@ -25,6 +25,11 @@ function formatPeso(amount: number) {
 export default function ProductTable({ products }: { products: ProductLine[] }) {
   const [category, setCategory] = useState<CategoryFilter>('All Categories');
   const [visibleCount, setVisibleCount] = useState(INITIAL_ROWS);
+
+  const categories = useMemo(
+    () => Array.from(new Set(products.map((product) => product.category))).sort(),
+    [products]
+  );
 
   const filtered = useMemo(
     () =>
@@ -53,9 +58,9 @@ export default function ProductTable({ products }: { products: ProductLine[] }) 
             }}
           >
             <option>All Categories</option>
-            <option>Beverage</option>
-            <option>Food</option>
-            <option>Stationery</option>
+            {categories.map((name) => (
+              <option key={name}>{name}</option>
+            ))}
           </select>
         </label>
       </div>

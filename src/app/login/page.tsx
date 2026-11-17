@@ -1,6 +1,6 @@
+import { Layers } from 'lucide-react';
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
-import { DEMO_USERS } from '@/lib/auth';
 import { getSession } from '@/lib/session';
 import LoginForm from './LoginForm';
 import styles from './login.module.css';
@@ -8,6 +8,13 @@ import styles from './login.module.css';
 export const metadata: Metadata = {
   title: 'Sign In · PRISM Management System',
 };
+
+const SEEDED_LOGINS = [
+  { label: 'Admin', username: 'admin', password: 'admin123' },
+  { label: 'Manager', username: 'manager', password: 'manager123' },
+  { label: 'Cashier', username: 'cashier', password: 'cashier123' },
+  { label: 'Store', username: 'storekeeper', password: 'store123' },
+];
 
 export default async function LoginPage() {
   // Already signed in? Skip the form and go where this role belongs.
@@ -22,9 +29,7 @@ export default async function LoginPage() {
       <div className={styles.card}>
         <div className={styles.brand}>
           <div className={styles.seal}>
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-            </svg>
+            <Layers size={24} color="white" aria-hidden="true" />
           </div>
           <div className={styles.brandText}>
             <span className={styles.prismText}>PRISM</span>
@@ -37,25 +42,26 @@ export default async function LoginPage() {
 
         <LoginForm />
 
-        {/* Prototype affordance — drop this block once real accounts exist.
-            Rendered from DEMO_USERS so it can never drift from the real logins. */}
-        <div className={styles.hint}>
-          <p className={styles.hintTitle}>Demo Accounts</p>
-          {DEMO_USERS.map((account) => (
-            <div key={account.id} className={styles.hintRow}>
-              <span
-                className={`${styles.badge} ${
-                  account.role === 'ADMIN' ? styles.badgeAdmin : styles.badgeUser
-                }`}
-              >
-                {account.role === 'ADMIN' ? 'Admin' : 'User'}
-              </span>
-              <span className={styles.hintCreds}>
-                {account.username} / {account.password}
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* The accounts created by `npm run db:seed`. Hidden in production. */}
+        {process.env.NODE_ENV !== 'production' && (
+          <div className={styles.hint}>
+            <p className={styles.hintTitle}>Demo Accounts</p>
+            {SEEDED_LOGINS.map((account) => (
+              <div key={account.username} className={styles.hintRow}>
+                <span
+                  className={`${styles.badge} ${
+                    account.label === 'Admin' ? styles.badgeAdmin : styles.badgeUser
+                  }`}
+                >
+                  {account.label}
+                </span>
+                <span className={styles.hintCreds}>
+                  {account.username} / {account.password}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

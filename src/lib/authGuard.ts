@@ -1,49 +1,41 @@
 // src/lib/authGuard.ts
 import { getSession } from './session';
-import { Role, SessionUser } from './auth';
+import type { Role, SessionUser } from './roles';
 
 export class UnauthorizedError extends Error {
-  constructor(message = 'Unauthorized: User is not authenticated') {
+  constructor(message = 'You are signed out. Please sign in again.') {
     super(message);
     this.name = 'UnauthorizedError';
   }
 }
 
 export class ForbiddenError extends Error {
-  constructor(message = 'Forbidden: Insufficient permissions for this action') {
+  constructor(message = 'You do not have permission to do that.') {
     super(message);
     this.name = 'ForbiddenError';
   }
 }
 
-/**
- * Server-side helper to resolve the currently authenticated user.
- * Reads from the server session cookie.
- */
+/** A signed-in user who belongs to a cooperative (everyone except ADMIN). */
+export type BranchUser = SessionUser & { branchId: number; branchName: string };
+
 export async function requireServerUser(): Promise<SessionUser> {
   const user = await getSession();
-  if (!user) {
-    throw new UnauthorizedError();
-  }
+  if (!user) throw new UnauthorizedError();
   return user;
 }
 
-/**
- * Server-side guard to enforce role-based access control inside Server Actions / Service Layer.
- * Throws ForbiddenError if the active user doesn't possess one of the allowed roles.
- */
 export async function requireRole(allowedRoles: Role[]): Promise<SessionUser> {
   const user = await requireServerUser();
-  
-  // Treat 'USER' as 'CASHIER' for backwards compatibility
-  const userRole = user.role === 'USER' ? 'CASHIER' : user.role;
-  const isAllowed = allowedRoles.some((role) => role === userRole || role === user.role);
-
-  if (!isAllowed) {
-    throw new ForbiddenError(
-      `Forbidden: Role '${user.role}' is not authorized. Required: ${allowedRoles.join(', ')}`
-    );
-  }
-
+  if (!allowedRoles.includes(user.role)) throw new ForbiddenError();
   return user;
+}
+
+/** Role check for store operations: also guarantees the user has a branch. */
+export async function requireBranchUser(allowedRoles: Role[]): Promise<BranchUser> {
+  const user = await requireRole(allowedRoles);
+  if (user.branchId === null || user.branchName === null) {
+    throw new ForbiddenError('This account is not assigned to a cooperative.');
+  }
+  return user as BranchUser;
 }

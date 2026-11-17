@@ -1,62 +1,113 @@
-'use client';
-
-import React from 'react';
+import { CalendarDays, Package, PackagePlus, PhilippinePeso, ShoppingCart, TriangleAlert } from 'lucide-react';
 import Link from 'next/link';
 import styles from './page.module.css';
-import { weeklySales, quickStats, popularItems, recentTransactions } from '@/data/mockData';
+import { requireBranchUser } from '@/lib/authGuard';
+import { DashboardService } from '@/services/dashboardService';
+import { formatCurrency, formatManilaTime } from '@/utils/formatters';
+import { longDate, manilaToday, weekdayLabel } from '@/lib/dates';
 
-export default function Dashboard() {
-  // Find max sales to calculate bar heights
-  const maxSales = Math.max(...weeklySales.map(d => d.amount));
+/** Good morning / afternoon / evening, by the time in Manila. */
+function greeting() {
+  const hour = (new Date().getUTCHours() + 8) % 24;
+  return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+}
 
-  const formatCurrency = (amount: number) => {
-    return `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  };
+export const metadata = { title: 'Dashboard · PRISM' };
+
+/** Short amount for a bar label: ₱953, ₱1.6k, ₱12k. */
+function compactPeso(amount: number) {
+  if (amount >= 10000) return `₱${Math.round(amount / 1000)}k`;
+  if (amount >= 1000) return `₱${(amount / 1000).toFixed(1)}k`;
+  return `₱${Math.round(amount)}`;
+}
+
+export default async function Dashboard() {
+  const user = await requireBranchUser(['MANAGER']);
+  const data = await DashboardService.getDashboard(user.branchId);
+
+  const maxSales = Math.max(1, ...data.weeklySales.map((day) => day.amount));
+  const weekTotal = data.weeklySales.reduce((sum, day) => sum + day.amount, 0);
+  const tradingDays = data.weeklySales.filter((day) => day.amount > 0).length;
+  const weekAverage = tradingDays > 0 ? weekTotal / tradingDays : 0;
+  const up = data.salesChange >= 0;
 
   return (
     <div className={styles.container}>
       <header className={styles.header}>
-        <h1>Dashboard</h1>
+        <div>
+          <h1>
+            {greeting()}, {user.name.split(' ')[0]}
+          </h1>
+          <p className={styles.headerSub}>
+            {weekdayLabel(manilaToday())}, {longDate(manilaToday())} · {user.branchName}
+          </p>
+        </div>
+        {/* The jobs a manager does most often, one tap away. */}
+        <nav className={styles.quickActions} aria-label="Quick actions">
+          <Link href="/pos" className={styles.quickPrimary}>
+            <ShoppingCart size={16} aria-hidden="true" />
+            New sale
+          </Link>
+          <Link href="/inventory" className={styles.quickAction}>
+            <PackagePlus size={16} aria-hidden="true" />
+            Receive stock
+          </Link>
+          <Link href="/daily-sales?tab=cash" className={styles.quickAction}>
+            <CalendarDays size={16} aria-hidden="true" />
+            Count drawer
+          </Link>
+        </nav>
       </header>
 
       <div className={styles.grid}>
-        {/* Left Column */}
         <div className={styles.leftCol}>
-          {/* Weekly Sales Trend */}
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>Weekly Sales Trend</h2>
-              <span className={styles.badge}>This Week</span>
+              <span className={styles.badge}>Last 7 days</span>
             </div>
             <div className={styles.chart}>
-              {weeklySales.map((data, index) => {
-                const heightPercent = (data.amount / maxSales) * 100;
+              {data.weeklySales.map((day, index) => {
+                const isToday = index === data.weeklySales.length - 1;
+                // The value label sits on top of the bar; leave room for it at the tallest.
+                const height = (day.amount / maxSales) * 82;
                 return (
-                  <div key={index} className={styles.barGroup}>
-                    <div 
-                      className={styles.bar} 
-                      style={{ height: `${heightPercent}%` }}
-                      title={formatCurrency(data.amount)}
-                    />
-                    <span className={styles.dayLabel}>{data.day}</span>
+                  <div key={day.date} className={styles.barGroup}>
+                    <div className={styles.barTrack}>
+                      <span className={styles.barValue}>{day.amount > 0 ? compactPeso(day.amount) : '—'}</span>
+                      <div
+                        className={`${styles.bar} ${isToday ? styles.barToday : ''}`}
+                        style={{ height: `${height}%` }}
+                        title={`${day.date}: ${formatCurrency(day.amount)}`}
+                      />
+                    </div>
+                    <span className={`${styles.dayLabel} ${isToday ? styles.dayLabelToday : ''}`}>
+                      {isToday ? 'Today' : day.day}
+                    </span>
                   </div>
                 );
               })}
             </div>
+            <div className={styles.chartFooter}>
+              <span>
+                7-day total <strong>{formatCurrency(weekTotal)}</strong>
+              </span>
+              <span>
+                Daily average <strong>{formatCurrency(weekAverage)}</strong> (days with sales)
+              </span>
+            </div>
           </div>
 
-          {/* Popular Items */}
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>Popular Items</h2>
+              <span className={styles.badge}>Last 30 days</span>
             </div>
             <div className={styles.popularGrid}>
-              {popularItems.map((item, index) => (
-                <div key={index} className={styles.popularItem}>
+              {data.popularItems.map((item) => (
+                <div key={item.name} className={styles.popularItem}>
                   <div className={styles.emojiCircle}>
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                    </svg>
+                    <Package size={18} color="#2563EB" aria-hidden="true" />
                   </div>
                   <div className={styles.itemInfo}>
                     <span className={styles.itemName}>{item.name}</span>
@@ -64,95 +115,83 @@ export default function Dashboard() {
                   </div>
                 </div>
               ))}
+              {data.popularItems.length === 0 && <span className={styles.itemSold}>No sales yet.</span>}
             </div>
           </div>
         </div>
 
-        {/* Right Column */}
         <div className={styles.rightCol}>
-          {/* Quick Stats */}
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>Quick Stats</h2>
             </div>
-            
+
             <div className={styles.statRow}>
               <div className={`${styles.statIcon} ${styles.iconSales}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-                </svg>
+                <PhilippinePeso size={20} aria-hidden="true" />
               </div>
               <div className={styles.statContent}>
                 <div className={styles.statLabel}>Today&apos;s Sales</div>
-                <div className={styles.statValue}>{formatCurrency(quickStats.todaySales)}</div>
-                <div className={`${styles.statSub} ${styles.green}`}>
-                  ↗ {quickStats.salesChange} vs yesterday
+                <div className={styles.statValue}>{formatCurrency(data.todaySales)}</div>
+                <div className={`${styles.statSub} ${up ? styles.green : styles.red}`}>
+                  {up ? '↗' : '↘'} {Math.abs(data.salesChange)}% vs yesterday
                 </div>
               </div>
             </div>
 
             <div className={styles.statRow}>
               <div className={`${styles.statIcon} ${styles.iconOrders}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <circle cx="9" cy="21" r="1" /><circle cx="20" cy="21" r="1" /><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6" />
-                </svg>
+                <ShoppingCart size={20} aria-hidden="true" />
               </div>
               <div className={styles.statContent}>
-                <div className={styles.statLabel}>Active Orders</div>
-                <div className={styles.statValue}>{quickStats.activeOrders}</div>
-                <div className={`${styles.statSub} ${styles.gray}`}>
-                  Currently preparing
-                </div>
+                <div className={styles.statLabel}>Transactions Today</div>
+                <div className={styles.statValue}>{data.todayTransactions}</div>
+                <div className={`${styles.statSub} ${styles.gray}`}>Completed sales</div>
               </div>
             </div>
 
             <div className={styles.statRow}>
               <div className={`${styles.statIcon} ${styles.iconStock}`}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-                </svg>
+                <TriangleAlert size={20} aria-hidden="true" />
               </div>
               <div className={styles.statContent}>
                 <div className={styles.statLabel}>Low Stock Items</div>
-                <div className={styles.statValue}>{quickStats.lowStockItems}</div>
+                <div className={styles.statValue}>{data.lowStockItems}</div>
                 <div className={`${styles.statSub} ${styles.red}`}>
                   <Link href="/inventory" className={styles.redLink}>View inventory list</Link>
                 </div>
               </div>
             </div>
 
-            <button className={styles.btnFullReport}>Generate Full Report</button>
+            <Link href="/daily-sales" className={styles.btnFullReport} style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
+              Open Daily Sales Report
+            </Link>
           </div>
 
-          {/* Recent Transactions */}
           <div className={styles.card}>
             <div className={styles.cardHeader}>
               <h2 className={styles.cardTitle}>Recent Transactions</h2>
-              <Link href="/transactions" className={styles.link}>View All</Link>
+              <Link href="/daily-sales" className={styles.link}>View All</Link>
             </div>
             <div className={styles.transactionList}>
-              {recentTransactions.map((tx, index) => (
-                <div key={index} className={styles.transactionItem}>
+              {data.recentTransactions.map((sale) => (
+                <div key={sale.id} className={styles.transactionItem}>
                   <div className={styles.transLeft}>
-                    <span className={styles.transId}>{tx.id}</span>
-                    <span className={styles.transTime}>{tx.time}</span>
+                    <span className={styles.transId}>{sale.number}</span>
+                    <span className={styles.transTime}>{formatManilaTime(sale.createdAt)}</span>
                   </div>
                   <div className={styles.transRight}>
-                    <span className={styles.transAmount}>{formatCurrency(tx.amount)}</span>
-                    <span className={`${styles.statusBadge} ${tx.status === 'Completed' ? styles.statusCompleted : styles.statusPreparing}`}>
-                      {tx.status}
+                    <span className={styles.transAmount}>{formatCurrency(sale.amount)}</span>
+                    <span className={`${styles.statusBadge} ${sale.status === 'COMPLETED' ? styles.statusCompleted : styles.statusPreparing}`}>
+                      {sale.status === 'COMPLETED' ? 'Completed' : 'Voided'}
                     </span>
                   </div>
                 </div>
               ))}
+              {data.recentTransactions.length === 0 && <span className={styles.transTime}>No sales yet.</span>}
             </div>
           </div>
         </div>
-      </div>
-
-      <div className={styles.pagination}>
-        <button className={styles.pageArrow}>&lt;</button>
-        <button className={styles.pageArrow}>&gt;</button>
       </div>
     </div>
   );

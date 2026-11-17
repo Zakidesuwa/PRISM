@@ -1,6 +1,7 @@
 'use client';
+import { CircleAlert, Eye, EyeOff, LoaderCircle, LogIn } from 'lucide-react';
 
-import { useActionState } from 'react';
+import { useActionState, useState } from 'react';
 import { useFormStatus } from 'react-dom';
 import { login, type LoginState } from '@/app/actions/auth';
 import styles from './login.module.css';
@@ -10,21 +11,30 @@ function SubmitButton() {
 
   return (
     <button type="submit" className={styles.submit} disabled={pending}>
-      {pending ? 'Signing in…' : 'Sign In'}
+      {pending ? (
+        <>
+          <LoaderCircle size={16} className="spin" aria-hidden="true" />
+          Signing in…
+        </>
+      ) : (
+        <>
+          <LogIn size={16} aria-hidden="true" />
+          Sign In
+        </>
+      )}
     </button>
   );
 }
 
 export default function LoginForm() {
   const [state, formAction] = useActionState<LoginState, FormData>(login, {});
+  const [showPassword, setShowPassword] = useState(false);
 
   return (
     <form action={formAction} className={styles.form}>
       {state.error && (
         <p className={styles.error} role="alert">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
+          <CircleAlert size={16} aria-hidden="true" />
           {state.error}
         </p>
       )}
@@ -49,15 +59,26 @@ export default function LoginForm() {
         <label htmlFor="password" className={styles.label}>
           Password
         </label>
-        <input
-          id="password"
-          name="password"
-          type="password"
-          className={styles.input}
-          placeholder="Enter your password"
-          autoComplete="current-password"
-          required
-        />
+        <div className={styles.passwordWrap}>
+          <input
+            id="password"
+            name="password"
+            type={showPassword ? 'text' : 'password'}
+            className={styles.input}
+            placeholder="Enter your password"
+            autoComplete="current-password"
+            required
+          />
+          <button
+            type="button"
+            className={styles.reveal}
+            onClick={() => setShowPassword(!showPassword)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+          >
+            {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+          </button>
+        </div>
       </div>
 
       <SubmitButton />

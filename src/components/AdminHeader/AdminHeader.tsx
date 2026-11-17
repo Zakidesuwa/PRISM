@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
-import type { SessionUser } from '@/lib/auth';
+import type { SessionUser } from '@/lib/roles';
 import { logout } from '@/app/actions/auth';
 import styles from './AdminHeader.module.css';
 
@@ -11,6 +11,7 @@ const TITLES: Record<string, string> = {
   '/admin': 'Dashboard',
   '/admin/cooperative': 'Cooperative Directory',
   '/admin/inventory': 'District Inventory',
+  '/admin/users': 'User Accounts',
   '/admin/settings': 'System Settings',
 };
 

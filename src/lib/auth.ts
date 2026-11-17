@@ -1,84 +1,72 @@
 // src/lib/auth.ts
-// Authentication and demo user configuration for PRISM
+// Server-only: password hashing and the signed session cookie.
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import type { Role } from './roles';
 
-export type Role = 'ADMIN' | 'CASHIER' | 'MANAGER' | 'USER';
-
-export interface DemoUser {
-  id: string;
-  username: string;
-  password: string;
-  name: string;
-  role: Role;
-  /** Where this role lands after a successful login. */
-  homePath: string;
-}
-
-export const DEMO_USERS: DemoUser[] = [
-  {
-    id: 'admin',
-    username: 'admin',
-    password: 'admin123',
-    name: 'Admin User',
-    role: 'ADMIN',
-    homePath: '/admin',
-  },
-  {
-    id: 'user',
-    username: 'user',
-    password: 'user123',
-    name: 'Standard Cashier',
-    role: 'CASHIER',
-    homePath: '/',
-  },
-  {
-    id: 'cashier',
-    username: 'cashier',
-    password: 'cashier123',
-    name: 'POS Cashier',
-    role: 'CASHIER',
-    homePath: '/pos',
-  },
-  {
-    id: 'manager',
-    username: 'manager',
-    password: 'manager123',
-    name: 'Elena Gomez (Manager)',
-    role: 'MANAGER',
-    homePath: '/',
-  },
-];
-
-/** What we expose to the app — never includes the password. */
-export type SessionUser = Omit<DemoUser, 'password'>;
-
-/** Copies fields explicitly so a future field on DemoUser can't leak by accident. */
-export function toSessionUser(user: DemoUser): SessionUser {
-  return {
-    id: user.id,
-    username: user.username,
-    name: user.name,
-    role: user.role,
-    homePath: user.homePath,
-  };
-}
-
-export function verifyCredentials(username: string, password: string): SessionUser | null {
-  const match = DEMO_USERS.find(
-    (user) => user.username === username.trim().toLowerCase() && user.password === password
-  );
-
-  return match ? toSessionUser(match) : null;
-}
-
-/**
- * The session cookie stores only the user id, so a tampered cookie can at worst
- * select another seeded user rather than inject arbitrary data.
- */
-export function findUserById(id: string | undefined): SessionUser | null {
-  if (!id) return null;
-
-  const match = DEMO_USERS.find((user) => user.id === id);
-  return match ? toSessionUser(match) : null;
-}
+export type { Role, SessionUser } from './roles';
 
 export const SESSION_COOKIE = 'prism_session';
+/** One shift. */
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 8;
+
+function secret(): string {
+  const value = process.env.SESSION_SECRET;
+  if (value) return value;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('SESSION_SECRET must be set in production.');
+  }
+  return 'prism-development-only-secret';
+}
+
+function sign(payload: string): string {
+  return createHmac('sha256', secret()).update(payload).digest('base64url');
+}
+
+export interface SessionToken {
+  uid: string;
+  role: Role;
+  exp: number;
+}
+
+/** The cookie is `payload.signature`; a tampered payload fails verification. */
+export function createSessionToken(uid: string, role: Role): string {
+  const token: SessionToken = {
+    uid,
+    role,
+    exp: Math.floor(Date.now() / 1000) + SESSION_MAX_AGE_SECONDS,
+  };
+  const payload = Buffer.from(JSON.stringify(token)).toString('base64url');
+  return `${payload}.${sign(payload)}`;
+}
+
+export function readSessionToken(value: string | undefined): SessionToken | null {
+  if (!value) return null;
+  const [payload, signature] = value.split('.');
+  if (!payload || !signature) return null;
+
+  const expected = Buffer.from(sign(payload));
+  const given = Buffer.from(signature);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+
+  try {
+    const token = JSON.parse(Buffer.from(payload, 'base64url').toString()) as SessionToken;
+    if (!token.uid || !token.role || token.exp < Math.floor(Date.now() / 1000)) return null;
+    return token;
+  } catch {
+    return null;
+  }
+}
+
+export function hashPassword(password: string): string {
+  const salt = randomBytes(16).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
+  return `scrypt$${salt}$${hash}`;
+}
+
+export function verifyPassword(password: string, stored: string): boolean {
+  const [scheme, salt, hash] = stored.split('$');
+  if (scheme !== 'scrypt' || !salt || !hash) return false;
+  const expected = Buffer.from(hash, 'hex');
+  const given = scryptSync(password, salt, expected.length);
+  return expected.length === given.length && timingSafeEqual(expected, given);
+}

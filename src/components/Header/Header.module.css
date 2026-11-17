@@ -1,6 +1,10 @@
 .header {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-header);
   height: 60px;
-  background-color: var(--white);
+  background-color: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(8px);
   border-bottom: 1px solid var(--gray-200);
   display: flex;
   align-items: center;
@@ -9,24 +13,162 @@
 }
 
 .rightSection {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 16px;
 }
 
 .iconButton {
+  position: relative;
   width: 40px;
   height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--gray-500);
-  transition: background-color 0.2s;
+  color: var(--color-text-muted);
+  transition: background-color var(--duration-fast) var(--ease-out);
 }
 
 .iconButton:hover {
   background-color: var(--gray-100);
+}
+
+.count {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9999px;
+  border: 2px solid var(--white);
+  background: #DC2626;
+  color: var(--white);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+
+.panel {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 340px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: 12px;
+  box-shadow: 0 12px 28px -6px rgba(15, 23, 42, 0.18);
+  animation: panelIn var(--duration-base) var(--ease-out);
+}
+
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.panelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.panelTitle {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.closeBtn {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+}
+
+.closeBtn:hover {
+  background: var(--gray-100);
+}
+
+.emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 8px;
+  color: var(--color-success);
+  font-size: 13px;
+  text-align: center;
+}
+
+.alertList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.alertItem {
+  display: flex;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-100);
+}
+
+.alertIconWarn,
+.alertIconDanger {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.alertIconWarn {
+  background: var(--color-warning-soft);
+  color: #B45309;
+}
+
+.alertIconDanger {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.alertTitle {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-900);
+}
+
+.alertDesc {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.panelLink {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-primary);
 }
 
 .userInfo {
@@ -45,15 +187,15 @@
 .userRole {
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.5px;
-  color: var(--gray-500);
+  letter-spacing: 0.3px;
+  color: var(--color-text-muted);
 }
 
 .avatar {
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  background-color: #047857; /* dark green placeholder */
+  background-color: var(--color-primary);
   color: white;
   display: flex;
   align-items: center;

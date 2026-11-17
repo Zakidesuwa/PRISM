@@ -1,4 +1,5 @@
 'use client';
+import { Package, Store } from 'lucide-react';
 
 import React, { useState } from 'react';
 import styles from './page.module.css';
@@ -49,9 +50,7 @@ export default function StoreOverviewSection({
           role="img"
           aria-label={`Photo of ${schoolName} store`}
         >
-          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l1.5-5h15L21 9" /><path d="M3 9h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" /><path d="M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0" /><path d="M9 21v-6h6v6" />
-          </svg>
+          <Store size={42} strokeWidth={1.5} aria-hidden="true" />
         </div>
 
         <div className={styles.storeBody}>
@@ -121,9 +120,7 @@ export default function StoreOverviewSection({
                     color: '#2563EB',
                   }}
                 >
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M3 9l1.5-5h15L21 9" /><path d="M3 9h18v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z" />
-                  </svg>
+                  <Store size={32} strokeWidth={1.5} aria-hidden="true" />
                   <span style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>Main POS &amp; Counter</span>
                   <span style={{ fontSize: 10, color: '#6B7280' }}>Front Entrance</span>
                 </div>
@@ -141,9 +138,7 @@ export default function StoreOverviewSection({
                     color: '#4B5563',
                   }}
                 >
-                  <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-                  </svg>
+                  <Package size={32} strokeWidth={1.5} aria-hidden="true" />
                   <span style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>Inventory Storage Area</span>
                   <span style={{ fontSize: 10, color: '#6B7280' }}>Back Room</span>
                 </div>

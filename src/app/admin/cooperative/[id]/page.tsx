@@ -1,7 +1,9 @@
+import { ChevronLeft } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getCooperativeDetail, findCooperative } from '@/data/cooperativeDetailData';
+import prisma from '@/lib/prisma';
+import { AdminService } from '@/services/adminService';
 import HeaderActions from './HeaderActions';
 import TurnoverChart from './TurnoverChart';
 import ProductTable from './ProductTable';
@@ -15,7 +17,9 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const coop = findCooperative(Number(id));
+  const coop = Number.isInteger(Number(id))
+    ? await prisma.schoolBranch.findUnique({ where: { id: Number(id) }, select: { name: true } })
+    : null;
 
   return {
     title: coop ? `${coop.name} · PRISM Management System` : 'Cooperative · PRISM Management System',
@@ -31,22 +35,26 @@ function formatPeso(amount: number, fractionDigits = 2) {
 
 export default async function CooperativeDetailPage({ params }: PageProps) {
   const { id } = await params;
-  const coop = findCooperative(Number(id));
+  const detail = Number.isInteger(Number(id)) ? await AdminService.getCooperativeDetail(Number(id)) : null;
 
-  if (!coop) {
+  if (!detail) {
     notFound();
   }
 
-  const detail = getCooperativeDetail(coop);
+  const coop = detail.coop;
+  const chip = (change: number) => (
+    <span className={`${styles.chip} ${change >= 0 ? styles.chipUp : styles.chipCritical}`}>
+      {change >= 0 ? '↑' : '↓'}
+      {Math.abs(change)}%
+    </span>
+  );
 
   return (
     <div className={styles.page}>
       <div className={styles.pageHeader}>
         <div>
           <Link href="/admin/cooperative" className={styles.backLink}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
+            <ChevronLeft size={13} strokeWidth={2.5} aria-hidden="true" />
             Back to directory
           </Link>
           <h1 className={styles.schoolTitle}>{coop.name}</h1>
@@ -60,26 +68,26 @@ export default async function CooperativeDetailPage({ params }: PageProps) {
 
       <div className={styles.statsRow}>
         <article className={`${styles.statCard} ${styles.tintBlue}`}>
-          <p className={styles.statLabel}>Monthly Sales</p>
+          <p className={styles.statLabel}>Sales This Month</p>
           <div className={styles.statValueRow}>
             <span className={styles.statValue}>{formatPeso(detail.monthlySales)}</span>
-            <span className={`${styles.chip} ${styles.chipUp}`}>↑{detail.salesChange}%</span>
+            {chip(detail.salesChange)}
           </div>
         </article>
 
         <article className={`${styles.statCard} ${styles.tintIndigo}`}>
-          <p className={styles.statLabel}>Net Profit</p>
+          <p className={styles.statLabel}>Net Surplus This Month</p>
           <div className={styles.statValueRow}>
             <span className={styles.statValue}>{formatPeso(detail.netProfit)}</span>
-            <span className={`${styles.chip} ${styles.chipUp}`}>↑{detail.profitChange}%</span>
+            {chip(detail.profitChange)}
           </div>
         </article>
 
         <article className={`${styles.statCard} ${styles.tintGreen}`}>
-          <p className={styles.statLabel}>Efficiency Ratio</p>
+          <p className={styles.statLabel}>Gross Margin</p>
           <div className={styles.statValueRow}>
             <span className={styles.statValue}>{detail.efficiencyRatio.toFixed(1)}%</span>
-            <span className={`${styles.chip} ${styles.chipNeutral}`}>Stable</span>
+            <span className={`${styles.chip} ${styles.chipNeutral}`}>Of sales</span>
           </div>
         </article>
 
@@ -87,7 +95,9 @@ export default async function CooperativeDetailPage({ params }: PageProps) {
           <p className={styles.statLabel}>Low Stock Items</p>
           <div className={styles.statValueRow}>
             <span className={styles.statValue}>{detail.lowStockItems}</span>
-            <span className={`${styles.chip} ${styles.chipCritical}`}>Critical</span>
+            <span className={`${styles.chip} ${detail.lowStockItems > 0 ? styles.chipCritical : styles.chipNeutral}`}>
+              {detail.lowStockItems > 0 ? 'Critical' : 'Healthy'}
+            </span>
           </div>
         </article>
       </div>

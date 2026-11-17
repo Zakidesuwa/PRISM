@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
-    "test:pos-engine": "tsx scripts/verify-pos-engine.ts",
+    "test:system": "tsx scripts/verify-system.ts",
+    "test:routes": "tsx scripts/smoke-routes.ts",
     "test:surplus-engine": "tsx scripts/verify-surplus-engine.ts"
   },
   "prisma": {
@@ -16,6 +17,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "lucide-react": "1.67.0",
     "next": "16.2.11",
     "react": "19.2.4",
     "react-dom": "19.2.4"

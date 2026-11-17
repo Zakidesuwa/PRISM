@@ -1,7 +1,36 @@
-/* src/app/globals.css */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+/* src/app/globals.css
+   Inter is loaded by next/font in app/layout.tsx (self-hosted, no layout shift). */
 
 :root {
+  /* Semantic tokens. Prefer these in new code. */
+  --color-primary: #2563EB;
+  --color-primary-hover: #1D4ED8;
+  --color-primary-soft: #EFF6FF;
+  --color-success: #047857;
+  --color-success-soft: #ECFDF5;
+  --color-warning: #92400E;
+  --color-warning-soft: #FFFBEB;
+  --color-danger: #B91C1C;
+  --color-danger-soft: #FEF2F2;
+  --color-text: #111827;
+  --color-text-muted: #4B5563; /* 7:1 on white; gray-500 is only 4.8:1 */
+  --color-border: #E5E7EB;
+  --color-surface: #FFFFFF;
+  --color-canvas: #F3F4F6;
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.45);
+
+  /* Motion: one rhythm for the whole app. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 200ms;
+
+  /* Layering */
+  --z-sidebar: 40;
+  --z-header: 30;
+  --z-dropdown: 100;
+  --z-modal: 1000;
+  --z-toast: 2000;
+
   /* Colors */
   --primary-blue: #2563EB;
   --dark-blue: #1e40af;
@@ -42,11 +71,13 @@
 }
 
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: var(--font-inter), 'Inter', system-ui, sans-serif;
   background-color: var(--gray-100);
   color: var(--gray-900);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  /* Money columns line up and do not jitter when values change. */
+  font-variant-numeric: tabular-nums;
 }
 
 a {
@@ -59,8 +90,115 @@ button {
   border: none;
   cursor: pointer;
   font-family: inherit;
+  touch-action: manipulation;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 ul, ol {
   list-style: none;
+}
+
+/* Keyboard users always see where they are. Mouse clicks do not show the ring. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection {
+  background: #BFDBFE;
+}
+
+/* Lucide icons sit on the text baseline in buttons and labels. */
+.lucide {
+  flex-shrink: 0;
+}
+
+/* "Skip to main content" for keyboard and screen-reader users. */
+.skip-link {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  z-index: var(--z-toast);
+  padding: 10px 16px;
+  border-radius: var(--radius-sm);
+  background: var(--color-primary);
+  color: #FFFFFF;
+  font-weight: 600;
+  transition: top var(--duration-fast) var(--ease-out);
+}
+
+.skip-link:focus {
+  top: 12px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -400px 0;
+  }
+  100% {
+    background-position: 400px 0;
+  }
+}
+
+/* Respect the operating system's "reduce motion" setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Printing: only the element marked .print-area is printed (receipts, reports). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
 }

@@ -1,0 +1,42 @@
+/* Placeholder blocks shown while a page's data loads (instead of a blank screen). */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.block {
+  border-radius: 12px;
+  background: linear-gradient(90deg, #EEF0F3 0px, #F7F8FA 160px, #EEF0F3 320px);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.title {
+  width: 220px;
+  height: 28px;
+  border-radius: 8px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  height: 92px;
+}
+
+.panel {
+  height: 320px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}

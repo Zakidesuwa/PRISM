@@ -1,4 +1,9 @@
 // prisma/schema.prisma
+//
+// Every operational table carries a branchId: each school cooperative
+// (SchoolBranch) has its own catalog, stock, members, sales and ledger.
+// ADMIN users have no branch and oversee all of them.
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -10,79 +15,173 @@ generator client {
 
 enum Role {
   ADMIN
-  CASHIER
   MANAGER
+  CASHIER
+  STOREKEEPER
+}
+
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  REVENUE
+  EXPENSE
+}
+
+model SchoolBranch {
+  id                 Int      @id @default(autoincrement())
+  name               String   @unique
+  address            String
+  level              String // Elementary, High School, College
+  storeLocation      String?
+  contactEmail       String?
+  phone              String?
+  defaultCreditLimit Decimal  @default(1000.00) @db.Decimal(12, 2)
+  nextTransactionSeq Int      @default(1001)
+  isActive           Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  users          User[]
+  members        CoopMember[]
+  vendors        Vendor[]
+  products       Product[]
+  inventoryItems InventoryItem[]
+  stockMovements StockMovement[]
+  transactions   Transaction[]
+  accounts       Account[]
+  journalEntries JournalEntry[]
+  cashCounts     CashCount[]
+  vendorPayouts  VendorPayout[]
+  distributions  SurplusDistribution[]
+  ledgerEntries  MemberLedgerEntry[]
 }
 
 model User {
   id           String        @id @default(cuid())
   username     String        @unique
-  password     String
+  passwordHash String
   name         String
   role         Role          @default(CASHIER)
+  branchId     Int?
+  branch       SchoolBranch? @relation(fields: [branchId], references: [id])
+  isActive     Boolean       @default(true)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+
   transactions Transaction[]
+  cashCounts   CashCount[]
   auditLogs    AuditLog[]
 }
 
-model SchoolBranch {
-  id            Int          @id @default(autoincrement())
-  name          String
-  address       String
-  level         String       // Elementary, High School, College
-  monthlyProfit Decimal      @default(0.00) @db.Decimal(10, 2)
-  stockStatus   String       @default("In Stock") // In Stock, Low Stock, Stock Out
-  members       CoopMember[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-}
-
 model CoopMember {
-  id                   Int           @id @default(autoincrement())
-  memberCode           String        @unique
+  id                   Int          @id @default(autoincrement())
+  branchId             Int
+  branch               SchoolBranch @relation(fields: [branchId], references: [id])
+  memberCode           String       @unique
   fullName             String
   email                String?
   phone                String?
-  branchId             Int
-  branch               SchoolBranch  @relation(fields: [branchId], references: [id])
-  status               String        @default("ACTIVE") // ACTIVE, INACTIVE
-  shareCapital         Decimal       @default(0.00) @db.Decimal(10, 2)
-  accumulatedPatronage Decimal       @default(0.00) @db.Decimal(10, 2)
-  transactions         Transaction[]
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  status               String       @default("ACTIVE") // ACTIVE, INACTIVE
+  shareCapital         Decimal      @default(0.00) @db.Decimal(12, 2)
+  accumulatedPatronage Decimal      @default(0.00) @db.Decimal(12, 2)
+  chargeBalance        Decimal      @default(0.00) @db.Decimal(12, 2)
+  creditLimit          Decimal      @default(1000.00) @db.Decimal(12, 2)
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  transactions Transaction[]
+  ledger       MemberLedgerEntry[]
+  allocations  SurplusAllocation[]
+
+  @@index([branchId])
+}
+
+// Member ledger: every change to a member's charge balance or share capital.
+model MemberLedgerEntry {
+  id                 Int          @id @default(autoincrement())
+  branchId           Int
+  branch             SchoolBranch @relation(fields: [branchId], references: [id])
+  memberId           Int
+  member             CoopMember   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  type               String // CHARGE, PAYMENT, SHARE_CAPITAL, PATRONAGE_REFUND, CAPITAL_INTEREST, VOID
+  amount             Decimal      @db.Decimal(12, 2)
+  chargeBalanceAfter Decimal      @db.Decimal(12, 2)
+  shareCapitalAfter  Decimal      @db.Decimal(12, 2)
+  reference          String?
+  note               String?
+  userId             String?
+  createdAt          DateTime     @default(now())
+
+  @@index([memberId, createdAt])
+  @@index([branchId, type, createdAt])
+}
+
+// Consignment vendor (concessionaire). The cooperative keeps commissionBps of
+// each sale and owes the vendor the rest.
+model Vendor {
+  id            Int          @id @default(autoincrement())
+  branchId      Int
+  branch        SchoolBranch @relation(fields: [branchId], references: [id])
+  name          String
+  contactPerson String?
+  phone         String?
+  commissionBps Int          @default(1000)
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+
+  products Product[]
+  payouts  VendorPayout[]
+
+  @@unique([branchId, name])
 }
 
 model Product {
-  id               Int                 @id @default(autoincrement())
-  name             String
-  sku              String              @unique
-  category         String
-  price            Decimal             @db.Decimal(10, 2)
-  stock            Int                 @default(0)
-  image            String?
+  id        Int          @id @default(autoincrement())
+  branchId  Int
+  branch    SchoolBranch @relation(fields: [branchId], references: [id])
+  name      String
+  sku       String
+  category  String
+  price     Decimal      @db.Decimal(10, 2)
+  image     String?
+  vendorId  Int?
+  vendor    Vendor?      @relation(fields: [vendorId], references: [id])
+  isActive  Boolean      @default(true)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  // Stock is never stored on the product: it is derived from the inventory
+  // items listed here (one item x1 for resale goods, several for a recipe).
   ingredients      ProductIngredient[]
   transactionItems TransactionItem[]
-  createdAt        DateTime            @default(now())
-  updatedAt        DateTime            @updatedAt
+
+  @@unique([branchId, sku])
 }
 
 model InventoryItem {
-  id                 Int                 @id @default(autoincrement())
-  name               String
-  packaging          String
-  sku                String              @unique
-  category           String
-  supplier           String
-  deliveryDays       String
-  price              Decimal             @db.Decimal(10, 2)
-  stock              Decimal             @default(0.000) @db.Decimal(10, 3)
-  unit               String
-  status             String              @default("Optimal") // Optimal, Low Stock, Empty
+  id           Int          @id @default(autoincrement())
+  branchId     Int
+  branch       SchoolBranch @relation(fields: [branchId], references: [id])
+  name         String
+  packaging    String
+  sku          String
+  category     String
+  supplier     String
+  deliveryDays String
+  unitCost     Decimal      @default(0) @db.Decimal(12, 4) // weighted average
+  stock        Decimal      @default(0.000) @db.Decimal(12, 3)
+  unit         String
+  reorderLevel Decimal      @default(5.000) @db.Decimal(12, 3)
+  parLevel     Decimal      @default(100.000) @db.Decimal(12, 3)
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
   productIngredients ProductIngredient[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
+  movements          StockMovement[]
+
+  @@unique([branchId, sku])
 }
 
 model ProductIngredient {
@@ -97,20 +196,53 @@ model ProductIngredient {
   @@unique([productId, inventoryItemId])
 }
 
+model StockMovement {
+  id              Int           @id @default(autoincrement())
+  branchId        Int
+  branch          SchoolBranch  @relation(fields: [branchId], references: [id])
+  inventoryItemId Int
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  type            String // RECEIVE, SALE, SPOILAGE, VOID_RETURN
+  quantity        Decimal       @db.Decimal(12, 3) // signed: + in, - out
+  unitCost        Decimal       @db.Decimal(12, 4)
+  stockAfter      Decimal       @db.Decimal(12, 3)
+  reference       String?
+  note            String?
+  userId          String?
+  createdAt       DateTime      @default(now())
+
+  @@index([branchId, createdAt])
+  @@index([reference])
+}
+
 model Transaction {
-  id                String            @id @default(cuid())
-  transactionNumber String            @unique
+  id                String       @id @default(cuid())
+  branchId          Int
+  branch            SchoolBranch @relation(fields: [branchId], references: [id])
+  transactionNumber String
   cashierId         String
-  cashier           User              @relation(fields: [cashierId], references: [id])
+  cashier           User         @relation(fields: [cashierId], references: [id])
   memberId          Int?
-  member            CoopMember?       @relation(fields: [memberId], references: [id])
-  subtotal          Decimal           @db.Decimal(10, 2)
-  taxAmount         Decimal           @db.Decimal(10, 2)
-  totalAmount       Decimal           @db.Decimal(10, 2)
-  paymentMethod     String            @default("CASH")
-  status            String            @default("COMPLETED") // COMPLETED, VOIDED
-  items             TransactionItem[]
-  createdAt         DateTime          @default(now())
+  member            CoopMember?  @relation(fields: [memberId], references: [id])
+  subtotal          Decimal      @db.Decimal(12, 2)
+  taxAmount         Decimal      @db.Decimal(12, 2)
+  totalAmount       Decimal      @db.Decimal(12, 2)
+  costOfGoods       Decimal      @default(0) @db.Decimal(12, 2)
+  paymentMethod     String       @default("CASH") // CASH, CHARGE, GCASH
+  amountTendered    Decimal?     @db.Decimal(12, 2)
+  changeAmount      Decimal?     @db.Decimal(12, 2)
+  paymentReference  String?
+  status            String       @default("COMPLETED") // COMPLETED, VOIDED
+  voidedAt          DateTime?
+  voidedById        String?
+  voidReason        String?
+  createdAt         DateTime     @default(now())
+
+  items TransactionItem[]
+
+  @@unique([branchId, transactionNumber])
+  @@index([branchId, createdAt])
+  @@index([memberId, createdAt])
 }
 
 model TransactionItem {
@@ -119,13 +251,154 @@ model TransactionItem {
   transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   productId     Int
   product       Product     @relation(fields: [productId], references: [id])
+  productName   String
+  category      String
   quantity      Int
   unitPrice     Decimal     @db.Decimal(10, 2)
-  subtotal      Decimal     @db.Decimal(10, 2)
+  unitCost      Decimal     @default(0) @db.Decimal(12, 4)
+  subtotal      Decimal     @db.Decimal(12, 2)
+  vendorId      Int?
+  vendorShare   Decimal     @default(0) @db.Decimal(12, 2)
+  commission    Decimal     @default(0) @db.Decimal(12, 2)
+
+  @@index([vendorId])
+}
+
+// ---------- General ledger ----------
+
+model Account {
+  id            Int          @id @default(autoincrement())
+  branchId      Int
+  branch        SchoolBranch @relation(fields: [branchId], references: [id])
+  code          String
+  name          String
+  type          AccountType
+  cashFlowGroup String       @default("OPERATING") // CASH, OPERATING, INVESTING, FINANCING
+  isSystem      Boolean      @default(false)
+  isActive      Boolean      @default(true)
+
+  lines JournalLine[]
+
+  @@unique([branchId, code])
+}
+
+model JournalEntry {
+  id          Int          @id @default(autoincrement())
+  branchId    Int
+  branch      SchoolBranch @relation(fields: [branchId], references: [id])
+  date        DateTime     @default(now())
+  description String
+  sourceType  String // SALE, COGS, VOID, DELIVERY, SPOILAGE, MEMBER_PAYMENT, SHARE_CAPITAL, CASH_COUNT, VENDOR_PAYOUT, DISTRIBUTION, MANUAL
+  sourceId    String?
+  createdById String?
+  createdAt   DateTime     @default(now())
+
+  lines JournalLine[]
+
+  @@index([branchId, date])
+  @@index([sourceType, sourceId])
+}
+
+model JournalLine {
+  id        Int          @id @default(autoincrement())
+  entryId   Int
+  entry     JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  accountId Int
+  account   Account      @relation(fields: [accountId], references: [id])
+  debit     Decimal      @default(0) @db.Decimal(14, 2)
+  credit    Decimal      @default(0) @db.Decimal(14, 2)
+
+  @@index([accountId])
+  @@index([entryId])
+}
+
+// ---------- Daily sales ----------
+
+model CashCount {
+  id           Int          @id @default(autoincrement())
+  branchId     Int
+  branch       SchoolBranch @relation(fields: [branchId], references: [id])
+  businessDate String // YYYY-MM-DD, Asia/Manila
+  cashierId    String
+  cashier      User         @relation(fields: [cashierId], references: [id])
+  openingFloat Decimal      @db.Decimal(12, 2)
+  cashSales    Decimal      @db.Decimal(12, 2)
+  collections  Decimal      @db.Decimal(12, 2)
+  expectedCash Decimal      @db.Decimal(12, 2)
+  countedCash  Decimal      @db.Decimal(12, 2)
+  variance     Decimal      @db.Decimal(12, 2)
+  notes        String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  @@unique([branchId, businessDate, cashierId])
+}
+
+model VendorPayout {
+  id        Int          @id @default(autoincrement())
+  branchId  Int
+  branch    SchoolBranch @relation(fields: [branchId], references: [id])
+  vendorId  Int
+  vendor    Vendor       @relation(fields: [vendorId], references: [id])
+  amount    Decimal      @db.Decimal(12, 2)
+  note      String?
+  userId    String
+  createdAt DateTime     @default(now())
+
+  @@index([vendorId])
+}
+
+// ---------- Net surplus distribution ----------
+
+model SurplusDistribution {
+  id                  Int          @id @default(autoincrement())
+  branchId            Int
+  branch              SchoolBranch @relation(fields: [branchId], references: [id])
+  fiscalYear          Int
+  netSurplus          Decimal      @db.Decimal(14, 2)
+  reserveFundBps      Int
+  cetfBps             Int
+  cdfBps              Int
+  optionalFundBps     Int
+  patronagePoolBps    Int
+  reserveFund         Decimal      @db.Decimal(14, 2)
+  cetf                Decimal      @db.Decimal(14, 2)
+  cdf                 Decimal      @db.Decimal(14, 2)
+  optionalFund        Decimal      @db.Decimal(14, 2)
+  patronageRefundPool Decimal      @db.Decimal(14, 2)
+  interestPool        Decimal      @db.Decimal(14, 2)
+  createdById         String
+  createdAt           DateTime     @default(now())
+
+  allocations SurplusAllocation[]
+
+  @@unique([branchId, fiscalYear])
+}
+
+model SurplusAllocation {
+  id                Int                 @id @default(autoincrement())
+  distributionId    Int
+  distribution      SurplusDistribution @relation(fields: [distributionId], references: [id], onDelete: Cascade)
+  memberId          Int
+  member            CoopMember          @relation(fields: [memberId], references: [id])
+  patronageBasis    Decimal             @db.Decimal(14, 2)
+  shareCapitalBasis Decimal             @db.Decimal(14, 2)
+  patronageRefund   Decimal             @db.Decimal(14, 2)
+  capitalInterest   Decimal             @db.Decimal(14, 2)
+}
+
+// ---------- System ----------
+
+// Single row (id = 1) holding district-wide settings as JSON.
+model SystemSetting {
+  id        Int      @id @default(1)
+  data      Json
+  updatedAt DateTime @updatedAt
 }
 
 model AuditLog {
   id         Int      @id @default(autoincrement())
+  branchId   Int?
   userId     String?
   user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   action     String
@@ -133,4 +406,6 @@ model AuditLog {
   entityId   String?
   details    String?
   timestamp  DateTime @default(now())
+
+  @@index([branchId, timestamp])
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, ReactNode } from 'react';
-import { SessionUser, Role } from '@/lib/auth';
+import type { SessionUser, Role } from '@/lib/roles';
 
 interface SessionContextType {
   user: SessionUser | null;
@@ -20,24 +20,16 @@ export function SessionProvider({
   children: ReactNode;
   initialUser: SessionUser | null;
 }) {
-  const hasRole = (roles: Role[]) => {
-    if (!initialUser) return false;
-    const userRole = initialUser.role === 'USER' ? 'CASHIER' : initialUser.role;
-    return roles.includes(userRole as Role) || roles.includes(initialUser.role);
-  };
-
-  const isAdmin = initialUser?.role === 'ADMIN';
-  const isCashier = initialUser?.role === 'CASHIER' || initialUser?.role === 'USER';
-  const isManager = initialUser?.role === 'MANAGER';
+  const hasRole = (roles: Role[]) => (initialUser ? roles.includes(initialUser.role) : false);
 
   return (
     <SessionContext.Provider
       value={{
         user: initialUser,
         hasRole,
-        isAdmin,
-        isCashier,
-        isManager,
+        isAdmin: initialUser?.role === 'ADMIN',
+        isCashier: initialUser?.role === 'CASHIER',
+        isManager: initialUser?.role === 'MANAGER',
       }}
     >
       {children}

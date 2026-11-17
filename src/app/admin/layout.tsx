@@ -28,9 +28,13 @@ export default async function AdminLayout({
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <AdminSidebar />
-      <div style={{ flex: 1, marginLeft: '230px', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, marginLeft: '230px', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <AdminHeader user={user} />
-        <main style={{ flex: 1, padding: '24px 32px', backgroundColor: 'var(--gray-100)' }}>
+        <main
+          id="main-content"
+          tabIndex={-1}
+          style={{ flex: 1, padding: '24px 32px', backgroundColor: 'var(--gray-100)', outline: 'none' }}
+        >
           {children}
         </main>
       </div>
