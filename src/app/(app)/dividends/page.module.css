@@ -1,212 +1,327 @@
 .wrapper {
-  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .headerRow {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
+  gap: 16px;
+  flex-wrap: wrap;
 }
 
 .title {
-  font-size: 1.125rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  margin: 0;
+  color: var(--gray-900);
 }
 
 .subtitle {
-  margin: 4px 0 0;
-  color: #6B7280;
-  font-size: 0.95rem;
+  margin-top: 4px;
+  color: var(--gray-500);
+  font-size: 0.9rem;
 }
 
-.headerActions {
-  display: flex;
-  gap: 0.75rem;
-}
-
-.primaryBtn {
-  background: #2563EB;
-  color: white;
-  padding: 0.5rem 0.9rem;
-  border-radius: 8px;
-  border: none;
+.badgeLive,
+.badgeSample {
+  padding: 4px 12px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
   font-weight: 600;
 }
 
-.statsRow {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1rem;
-  margin: 1rem 0 1.25rem;
-}
-
-.statCard {
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 2px rgba(16,24,40,0.04);
-  border: 1px solid #E6EEF8;
-}
-
-.statInner {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-}
-
-.statIcon {
-  width: 56px;
-  height: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #F3F6FB;
-  border-radius: 8px;
-  font-size: 1.25rem;
-}
-
-.statLabel {
-  font-size: 0.75rem;
-  color: #6B7280;
-  text-transform: uppercase;
-}
-
-.statValue {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: #111827;
-}
-
-.statChange {
-  margin-left: auto;
+.badgeLive {
   background: #ECFDF5;
-  color: #059669;
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
+  color: #047857;
+}
+
+.badgeSample {
+  background: var(--gray-100);
+  color: var(--gray-700);
+}
+
+.card {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.inputGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gray-500);
+}
+
+.input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--gray-900);
+  background: var(--white);
+}
+
+.input:focus {
+  outline: 2px solid var(--primary-blue);
+  outline-offset: -1px;
+}
+
+.inputFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.hint {
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+
+.secondaryBtn {
+  padding: 6px 12px;
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-sm);
+  background: var(--white);
+  color: var(--gray-700);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  background: var(--gray-50);
+}
+
+.errorBanner,
+.warningBanner {
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+}
+
+.errorBanner {
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  color: #B91C1C;
+}
+
+.warningBanner {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #92400E;
+}
+
+.sectionTitle {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--gray-900);
+}
+
+.fundGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.poolGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.fundCard {
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.fundTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.fundName {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--gray-700);
+}
+
+.fundRate {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: var(--light-blue);
+  color: var(--dark-blue);
+  font-size: 0.75rem;
   font-weight: 700;
 }
 
-.statEmpty {
-  width: 36px;
+.fundAmount {
+  margin-top: 10px;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--gray-900);
+  font-variant-numeric: tabular-nums;
 }
 
-.tableCard {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #E5E7EB;
-  padding: 1rem;
+.fundPurpose {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: var(--gray-500);
+}
+
+.equation {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: var(--white);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius-md);
+  padding: 16px;
+}
+
+.equationItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.equationLabel {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.equationValue,
+.equationResult {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.equationValue {
+  color: var(--gray-900);
+}
+
+.equationResult {
+  color: var(--primary-blue);
+}
+
+.operator {
+  font-size: 1.25rem;
+  color: var(--gray-400);
 }
 
 .tableTop {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 0.75rem;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 
 .tableTitle {
-  margin: 0;
-  font-size: 1rem;
+  font-size: 0.95rem;
   font-weight: 700;
+  color: var(--gray-900);
 }
 
-.searchWrapper {
-  min-width: 220px;
+.search {
+  width: 260px;
+  max-width: 100%;
 }
 
-.searchInput {
-  width: 100%;
-  padding: 0.5rem 0.75rem;
-  border-radius: 8px;
-  border: 1px solid #E5E7EB;
+.tableScroll {
+  overflow-x: auto;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
+  font-size: 0.875rem;
 }
 
-.table thead th {
+.table th {
+  padding: 10px 8px;
   text-align: left;
-  padding: 0.75rem 0.5rem;
-  font-size: 0.8rem;
-  color: #6B7280;
-  border-bottom: 1px solid #F3F4F6;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--gray-500);
+  border-bottom: 1px solid var(--gray-200);
+  white-space: nowrap;
 }
 
-.table tbody td {
-  padding: 0.75rem 0.5rem;
-  border-bottom: 1px solid #F8FAFC;
+.table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--gray-100);
+  color: var(--gray-700);
   vertical-align: middle;
 }
 
-.nameCell {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
+.table tfoot td {
+  border-bottom: none;
+  border-top: 1px solid var(--gray-200);
+  font-weight: 700;
+  color: var(--gray-900);
 }
 
-.avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #EFF6FF;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  color: #1E293B;
+.table th.num,
+.table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .name {
   font-weight: 600;
+  color: var(--gray-900);
 }
 
-.linkValue {
-  color: #2563EB;
+.meta {
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.table td.total {
   font-weight: 700;
+  color: var(--primary-blue);
 }
 
-.statusProcessed {
-  background: #ECFDF5;
-  color: #059669;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-weight: 700;
-}
-
-.statusPending {
-  background: #F3F4F6;
-  color: #6B7280;
-  padding: 0.25rem 0.5rem;
-  border-radius: 9999px;
-  font-weight: 700;
-}
-
-.tableFooter {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding-top: 0.75rem;
-}
-
-.pagination {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.pageBtn {
-  background: white;
-  border: 1px solid #E5E7EB;
-  padding: 0.25rem 0.5rem;
-  border-radius: 6px;
-}
-
-.pageNumber {
-  min-width: 24px;
+.table td.empty {
   text-align: center;
+  color: var(--gray-500);
+  padding: 24px 8px;
+}
+
+.formula {
+  margin-top: 12px;
+  font-size: 0.78rem;
+  color: var(--gray-500);
 }

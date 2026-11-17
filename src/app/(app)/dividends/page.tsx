@@ -1,160 +1,371 @@
-"use client";
+'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import styles from './page.module.css';
+import { formatCurrency } from '@/utils/formatters';
+import { getDistributionMembersAction } from '@/actions/surplusActions';
+import { SAMPLE_NET_SURPLUS, sampleDistributionMembers } from '@/data/surplusMockData';
+import {
+  DistributionMember,
+  DistributionResult,
+  centavosToPesos,
+  computeDistribution,
+  getRateWarnings,
+  parseMoneyToCentavos,
+  parsePercentToBps,
+} from '@/lib/surplus/distribution';
 
-type Stakeholder = {
-  id: number;
-  name: string;
-  role: string;
-  shares: number;
-  status: 'Processed' | 'Pending';
+type RateKey = 'reserve' | 'cetf' | 'cdf' | 'optional' | 'patronage';
+
+const DEFAULT_RATE_TEXT: Record<RateKey, string> = {
+  reserve: '10',
+  cetf: '10',
+  cdf: '3',
+  optional: '7',
+  patronage: '30',
 };
 
-const MOCK_POOL = 124500; // total pool available
-
-const MOCK_STAKEHOLDERS: Stakeholder[] = [
-  { id: 1, name: 'John Smith', role: 'Administration', shares: 1250, status: 'Processed' },
-  { id: 2, name: 'Emily Davis', role: 'Operations Manager', shares: 850, status: 'Pending' },
-  { id: 3, name: 'Michael Wong', role: 'Head Chef', shares: 600, status: 'Processed' },
-  { id: 4, name: 'Sarah Jenkins', role: 'Supplier Liaison', shares: 450, status: 'Pending' },
-  { id: 5, name: 'Carlos Reyes', role: 'Cashier', shares: 300, status: 'Processed' },
-  { id: 6, name: 'Ana Lopez', role: 'Storekeeper', shares: 200, status: 'Processed' },
-  { id: 7, name: 'Rico Santos', role: 'Supervisor', shares: 180, status: 'Pending' },
-  { id: 8, name: 'Grace Lim', role: 'Accountant', shares: 170, status: 'Processed' },
+const RATE_FIELDS: { key: RateKey; label: string }[] = [
+  { key: 'reserve', label: 'Reserve Fund' },
+  { key: 'cetf', label: 'CETF' },
+  { key: 'cdf', label: 'CDF' },
+  { key: 'optional', label: 'Optional Fund' },
+  { key: 'patronage', label: 'Patronage share of available surplus' },
 ];
 
+const FUNDS: {
+  key: RateKey;
+  name: string;
+  purpose: string;
+  amount: (result: DistributionResult) => number;
+  bps: (result: DistributionResult) => number;
+}[] = [
+  {
+    key: 'reserve',
+    name: 'Reserve Fund',
+    purpose: 'Buffer for future losses and stability',
+    amount: (r) => r.reserveFund,
+    bps: (r) => r.rates.reserveFundBps,
+  },
+  {
+    key: 'cetf',
+    name: 'Education & Training Fund (CETF)',
+    purpose: 'Member and officer training',
+    amount: (r) => r.cetf,
+    bps: (r) => r.rates.cetfBps,
+  },
+  {
+    key: 'cdf',
+    name: 'Community Development Fund (CDF)',
+    purpose: 'Local community projects',
+    amount: (r) => r.cdf,
+    bps: (r) => r.rates.cdfBps,
+  },
+  {
+    key: 'optional',
+    name: 'Optional Fund',
+    purpose: 'Projects approved by the general assembly',
+    amount: (r) => r.optionalFund,
+    bps: (r) => r.rates.optionalFundBps,
+  },
+];
+
+const peso = (centavos: number) => formatCurrency(centavosToPesos(centavos));
+const percent = (bps: number) => `${bps / 100}%`;
+const share = (part: number, total: number) =>
+  total > 0 ? `${((part / total) * 100).toFixed(2)}%` : '—';
+
+type Computed =
+  | { result: DistributionResult; warnings: string[]; error?: undefined }
+  | { error: string; result?: undefined; warnings?: undefined };
+
+function buildDistribution(
+  netSurplusText: string,
+  rateText: Record<RateKey, string>,
+  members: DistributionMember[]
+): Computed {
+  const netSurplus = parseMoneyToCentavos(netSurplusText);
+  if (netSurplus === null) return { error: 'Enter a valid net surplus amount.' };
+
+  const bps = {} as Record<RateKey, number>;
+  for (const field of RATE_FIELDS) {
+    const parsed = parsePercentToBps(rateText[field.key]);
+    if (parsed === null) {
+      return { error: `Enter a percentage between 0 and 100 for ${field.label}.` };
+    }
+    bps[field.key] = parsed;
+  }
+
+  const rates = {
+    reserveFundBps: bps.reserve,
+    cetfBps: bps.cetf,
+    cdfBps: bps.cdf,
+    optionalFundBps: bps.optional,
+    patronagePoolBps: bps.patronage,
+  };
+
+  try {
+    return {
+      result: computeDistribution({ netSurplus, rates, members }),
+      warnings: getRateWarnings(rates),
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : 'Could not compute the distribution.' };
+  }
+}
+
 export default function DividendsPage() {
+  const [netSurplusText, setNetSurplusText] = useState(SAMPLE_NET_SURPLUS);
+  const [rateText, setRateText] = useState(DEFAULT_RATE_TEXT);
+  const [members, setMembers] = useState<DistributionMember[]>(sampleDistributionMembers);
+  const [usingLiveData, setUsingLiveData] = useState(false);
   const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
-  const perPage = 4;
 
-  const filtered = useMemo(() => {
+  // Use real members once the database is connected; otherwise keep the samples.
+  useEffect(() => {
+    let cancelled = false;
+    getDistributionMembersAction()
+      .then((response) => {
+        if (cancelled || !response.success || !response.data?.length) return;
+        setMembers(response.data);
+        setUsingLiveData(true);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const computed = useMemo(
+    () => buildDistribution(netSurplusText, rateText, members),
+    [netSurplusText, rateText, members]
+  );
+
+  const { result } = computed;
+
+  const rows = useMemo(() => {
+    if (!result) return [];
     const q = query.trim().toLowerCase();
-    if (!q) return MOCK_STAKEHOLDERS;
-    return MOCK_STAKEHOLDERS.filter(s => s.name.toLowerCase().includes(q) || s.role.toLowerCase().includes(q));
-  }, [query]);
-
-  const totalShares = useMemo(() => MOCK_STAKEHOLDERS.reduce((s, i) => s + i.shares, 0), []);
-  const avgPerShare = totalShares > 0 ? MOCK_POOL / totalShares : 0;
-
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-  const paged = filtered.slice((page - 1) * perPage, page * perPage);
-
-  function initials(name: string) {
-    return name.split(' ').map(n => n[0]).slice(0,2).join('').toUpperCase();
-  }
-
-  function formatCurrency(n: number) {
-    return '$' + n.toFixed(2).replace(/\d(?=(\d{3})+\.)/g, '$&,');
-  }
+    return members
+      .map((member, index) => ({ member, allocation: result.members[index] }))
+      .filter(
+        ({ member }) =>
+          !q ||
+          member.fullName.toLowerCase().includes(q) ||
+          member.memberCode.toLowerCase().includes(q) ||
+          member.branchName.toLowerCase().includes(q)
+      );
+  }, [members, result, query]);
 
   return (
     <div className={styles.wrapper}>
       <div className={styles.headerRow}>
         <div>
-          <h1 className={styles.title}>Q3 2023 Dividend Distribution</h1>
-          <p className={styles.subtitle}>Review and manage stakeholder profit sharing.</p>
+          <h1 className={styles.title}>Net Surplus Distribution</h1>
+          <p className={styles.subtitle}>
+            Statutory funds, patronage refunds and interest on share capital.
+          </p>
         </div>
-        <div className={styles.headerActions}>
-          <button className={styles.primaryBtn}>Generate Report</button>
-        </div>
+        <span className={usingLiveData ? styles.badgeLive : styles.badgeSample}>
+          {usingLiveData ? 'Live member data' : 'Sample member data'}
+        </span>
       </div>
 
-      <div className={styles.statsRow}>
-        <div className={styles.statCard}>
-          <div className={styles.statInner}>
-            <div className={styles.statIcon}>🏦</div>
-            <div>
-              <div className={styles.statLabel}>Total Pool Available</div>
-              <div className={styles.statValue}>{formatCurrency(MOCK_POOL)}</div>
-            </div>
-            <div className={styles.statChange}>+12.5%</div>
-          </div>
-        </div>
-
-        <div className={styles.statCard}>
-          <div className={styles.statInner}>
-            <div className={styles.statIcon}>👥</div>
-            <div>
-              <div className={styles.statLabel}>Eligible Stakeholders</div>
-              <div className={styles.statValue}>{MOCK_STAKEHOLDERS.length}</div>
-            </div>
-            <div className={styles.statEmpty} />
-          </div>
-        </div>
-
-        <div className={styles.statCard}>
-          <div className={styles.statInner}>
-            <div className={styles.statIcon}>💸</div>
-            <div>
-              <div className={styles.statLabel}>Avg. Distribution per Share</div>
-              <div className={styles.statValue}>{formatCurrency(avgPerShare)}</div>
-            </div>
-            <div className={styles.statEmpty} />
-          </div>
-        </div>
-      </div>
-
-      <div className={styles.tableCard}>
-        <div className={styles.tableTop}
-        >
-          <h2 className={styles.tableTitle}>Stakeholder Breakdown</h2>
-          <div className={styles.searchWrapper}>
+      <section className={styles.card}>
+        <div className={styles.inputGrid}>
+          <label className={styles.field}>
+            <span className={styles.fieldLabel}>Net surplus (₱)</span>
             <input
-              className={styles.searchInput}
-              placeholder="Search stakeholder..."
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              className={styles.input}
+              inputMode="decimal"
+              value={netSurplusText}
+              onChange={(e) => setNetSurplusText(e.target.value)}
             />
-          </div>
+          </label>
+          {RATE_FIELDS.map((field) => (
+            <label key={field.key} className={styles.field}>
+              <span className={styles.fieldLabel}>{field.label} (%)</span>
+              <input
+                className={styles.input}
+                inputMode="decimal"
+                value={rateText[field.key]}
+                onChange={(e) => setRateText((prev) => ({ ...prev, [field.key]: e.target.value }))}
+              />
+            </label>
+          ))}
         </div>
-
-        <table className={styles.table}>
-          <thead>
-            <tr>
-              <th>Stakeholder Name</th>
-              <th>Department / Role</th>
-              <th>Shares Held</th>
-              <th>% of Pool</th>
-              <th>Calculated Dividend</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {paged.map(s => {
-              const pct = totalShares ? (s.shares / totalShares) * 100 : 0;
-              const calc = avgPerShare * s.shares;
-              return (
-                <tr key={s.id}>
-                  <td className={styles.nameCell}>
-                    <div className={styles.avatar}>{initials(s.name)}</div>
-                    <div>
-                      <div className={styles.name}>{s.name}</div>
-                    </div>
-                  </td>
-                  <td>{s.role}</td>
-                  <td>{s.shares.toLocaleString()}</td>
-                  <td>{pct.toFixed(1)}%</td>
-                  <td className={styles.linkValue}>{formatCurrency(calc)}</td>
-                  <td>
-                    <span className={s.status === 'Processed' ? styles.statusProcessed : styles.statusPending}>{s.status}</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        <div className={styles.tableFooter}>
-          <div>Showing {Math.min(filtered.length, (page-1)*perPage + 1)} to {Math.min(filtered.length, page*perPage)} of {filtered.length} entries</div>
-          <div className={styles.pagination}>
-            <button className={styles.pageBtn} onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1}>&lt;</button>
-            <span className={styles.pageNumber}>{page}</span>
-            <button className={styles.pageBtn} onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages}>&gt;</button>
-          </div>
+        <div className={styles.inputFooter}>
+          <span className={styles.hint}>
+            The rest of the available surplus goes to interest on share capital.
+          </span>
+          <button
+            type="button"
+            className={styles.secondaryBtn}
+            onClick={() => setRateText(DEFAULT_RATE_TEXT)}
+          >
+            Reset rates
+          </button>
         </div>
-      </div>
+      </section>
+
+      {computed.error && <div className={styles.errorBanner}>{computed.error}</div>}
+
+      {computed.warnings?.map((warning) => (
+        <div key={warning} className={styles.warningBanner}>
+          {warning}
+        </div>
+      ))}
+
+      {result && (
+        <>
+          <h2 className={styles.sectionTitle}>Step 1 — Statutory funds</h2>
+          <div className={styles.fundGrid}>
+            {FUNDS.map((fund) => (
+              <div key={fund.key} className={styles.fundCard}>
+                <div className={styles.fundTop}>
+                  <span className={styles.fundName}>{fund.name}</span>
+                  <span className={styles.fundRate}>{percent(fund.bps(result))}</span>
+                </div>
+                <div className={styles.fundAmount}>{peso(fund.amount(result))}</div>
+                <div className={styles.fundPurpose}>{fund.purpose}</div>
+              </div>
+            ))}
+          </div>
+
+          <h2 className={styles.sectionTitle}>Step 2 — Surplus available for members</h2>
+          <div className={styles.equation}>
+            <div className={styles.equationItem}>
+              <span className={styles.equationLabel}>Net surplus</span>
+              <span className={styles.equationValue}>{peso(result.netSurplus)}</span>
+            </div>
+            <span className={styles.operator}>−</span>
+            <div className={styles.equationItem}>
+              <span className={styles.equationLabel}>Total statutory funds</span>
+              <span className={styles.equationValue}>{peso(result.totalStatutory)}</span>
+            </div>
+            <span className={styles.operator}>=</span>
+            <div className={styles.equationItem}>
+              <span className={styles.equationLabel}>Available surplus</span>
+              <span className={styles.equationResult}>{peso(result.availableSurplus)}</span>
+            </div>
+          </div>
+
+          <h2 className={styles.sectionTitle}>Step 3 — Patronage refund and interest on share capital</h2>
+          <div className={styles.poolGrid}>
+            <div className={styles.fundCard}>
+              <div className={styles.fundTop}>
+                <span className={styles.fundName}>Patronage Refund pool</span>
+                <span className={styles.fundRate}>{percent(result.rates.patronagePoolBps)}</span>
+              </div>
+              <div className={styles.fundAmount}>{peso(result.patronageRefundPool)}</div>
+              <div className={styles.fundPurpose}>
+                Shared by purchases — total {peso(result.totalPatronage)}
+              </div>
+            </div>
+            <div className={styles.fundCard}>
+              <div className={styles.fundTop}>
+                <span className={styles.fundName}>Interest on Share Capital pool</span>
+                <span className={styles.fundRate}>
+                  {percent(10000 - result.rates.patronagePoolBps)}
+                </span>
+              </div>
+              <div className={styles.fundAmount}>{peso(result.shareCapitalInterestPool)}</div>
+              <div className={styles.fundPurpose}>
+                Shared by share capital — total {peso(result.totalShareCapital)}
+              </div>
+            </div>
+          </div>
+
+          {(result.undistributedPatronage > 0 || result.undistributedInterest > 0) && (
+            <div className={styles.warningBanner}>
+              {peso(result.undistributedPatronage + result.undistributedInterest)} cannot be paid
+              out because no member has purchases or share capital to base it on.
+            </div>
+          )}
+
+          <section className={styles.card}>
+            <div className={styles.tableTop}>
+              <h3 className={styles.tableTitle}>Member breakdown</h3>
+              <input
+                className={`${styles.input} ${styles.search}`}
+                placeholder="Search member, code or school..."
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </div>
+
+            <div className={styles.tableScroll}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Member</th>
+                    <th className={styles.num}>Purchases</th>
+                    <th className={styles.num}>% of purchases</th>
+                    <th className={styles.num}>Patronage refund</th>
+                    <th className={styles.num}>Share capital</th>
+                    <th className={styles.num}>Interest on capital</th>
+                    <th className={styles.num}>Total payout</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(({ member, allocation }) => (
+                    <tr key={member.id}>
+                      <td>
+                        <div className={styles.name}>{member.fullName}</div>
+                        <div className={styles.meta}>
+                          {member.memberCode} · {member.branchName}
+                          {member.status !== 'ACTIVE' && ' · Inactive'}
+                        </div>
+                      </td>
+                      <td className={styles.num}>{peso(member.patronageCentavos)}</td>
+                      <td className={styles.num}>
+                        {share(member.patronageCentavos, result.totalPatronage)}
+                      </td>
+                      <td className={styles.num}>{peso(allocation.patronageRefund)}</td>
+                      <td className={styles.num}>{peso(member.shareCapitalCentavos)}</td>
+                      <td className={styles.num}>{peso(allocation.shareCapitalInterest)}</td>
+                      <td className={`${styles.num} ${styles.total}`}>{peso(allocation.total)}</td>
+                    </tr>
+                  ))}
+                  {rows.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className={styles.empty}>
+                        No members match your search.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td>All {members.length} members</td>
+                    <td className={styles.num}>{peso(result.totalPatronage)}</td>
+                    <td className={styles.num} />
+                    <td className={styles.num}>
+                      {peso(result.patronageRefundPool - result.undistributedPatronage)}
+                    </td>
+                    <td className={styles.num}>{peso(result.totalShareCapital)}</td>
+                    <td className={styles.num}>
+                      {peso(result.shareCapitalInterestPool - result.undistributedInterest)}
+                    </td>
+                    <td className={`${styles.num} ${styles.total}`}>
+                      {peso(
+                        result.availableSurplus -
+                          result.undistributedPatronage -
+                          result.undistributedInterest
+                      )}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <p className={styles.formula}>
+              Patronage refund = (member purchases ÷ total purchases) × patronage refund pool.
+              Interest on capital = (member share capital ÷ total share capital) × interest pool.
+            </p>
+          </section>
+        </>
+      )}
     </div>
   );
 }

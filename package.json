@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "tsx prisma/seed.ts",
-    "test:pos-engine": "tsx scripts/verify-pos-engine.ts"
+    "test:pos-engine": "tsx scripts/verify-pos-engine.ts",
+    "test:surplus-engine": "tsx scripts/verify-surplus-engine.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
