@@ -11,6 +11,7 @@
 - Modules built: POS, inventory, products, members + member lookup, daily sales (sales reading, cash over/short, vendor split), financial reports, net surplus distribution, users, settings, district admin panel.
 - `IMPLEMENTATION_PLAN.md` and `TEAM_HANDOFF.md` are **old planning docs and are out of date**. Trust the code, `README.md` and `SETUP.md`.
 - The client's "Z reading" was deliberately left out (their request). The sales reading is a read-only daily summary.
+- **Team history:** Dench (another dev) built Daily Sales and Financial Reports separately in github.com/CasaulDench/Dench_Prism (remote `dench`). It was merged in commit `d78dbbe` (unrelated histories). His pure libraries `src/lib/accounting/` and `src/lib/dailySales/` now drive our statements and daily-sales figures; his schema, services and pages were not carried over (single-cooperative, Z-reading based). Later ports credit him with a `Co-Authored-By: Dench-Casaul` trailer.
 
 ## Tech stack
 
@@ -36,9 +37,11 @@ docker compose up -d         # Postgres (Docker Desktop must be running)
 npx prisma db push           # apply schema
 npx prisma generate          # STOP the dev server first on Windows (file lock -> EPERM)
 npm run db:seed              # WIPES everything, reseeds (~2 min). `-- --minimal` skips demo history
-npm run test:system          # 34 end-to-end checks against the DB (uses a throwaway branch)
-npm run test:surplus-engine  # 14 checks, no DB
-npm run test:routes          # every page as every role; needs the dev server running
+npm run test:system            # 40 end-to-end checks against the DB (uses a throwaway branch)
+npm run test:financial-reports # Dench's: statement maths + read-only ledger checks on every branch (50)
+npm run test:daily-sales       # Dench's: daily-sales calculations, no DB (16)
+npm run test:surplus-engine    # 14 checks, no DB
+npm run test:routes            # every page as every role; needs the dev server running
 ```
 
 Seeded logins: `admin/admin123`, `manager/manager123`, `cashier/cashier123`, `storekeeper/store123` (Gordon College); other branches use `manager2`..`manager5` etc.
@@ -48,7 +51,9 @@ Seeded logins: `admin/admin123`, `manager/manager123`, `cashier/cashier123`, `st
 ```
 prisma/schema.prisma        # 20 models; see header comment
 prisma/seed.ts              # runs the real services day by day to build consistent history
-scripts/                    # verify-system.ts, verify-surplus-engine.ts, smoke-routes.ts
+scripts/                    # verify-system.ts, verify-surplus-engine.ts, smoke-routes.ts,
+                            # verify-financial-reports.ts + verify-daily-sales.ts (Dench's),
+                            # fixtures/ (test data only), migrations/ (one-off in-place upgrades)
 src/
 ├── proxy.ts                # Route gate (Next 16's renamed middleware); role from signed cookie, no DB
 ├── app/
@@ -74,6 +79,9 @@ src/
 │   ├── dates.ts            # Manila business dates and [from, to) ranges
 │   ├── money.ts            # Decimal helpers + input validation
 │   ├── settings.ts, adminTypes.ts, useAction.ts (client hook), surplus/distribution.ts
+│   ├── accounting/         # Dench's: chartOfAccounts (subtypes, code ranges), ledger (entry rules),
+│   │                       #   statements (income, balance sheet, cash flow, trial balance), periods
+│   └── dailySales/         # Dench's: businessDate, calculations (summary, vendor split, denominations)
 ├── components/             # Sidebar, Header, AdminSidebar, AdminHeader, Modal, UsersManager, MemberProfile
 ├── context/                # SessionContext, ToastContext
 ├── styles/ui.module.css    # Shared UI kit for the newer screens
@@ -98,7 +106,11 @@ src/
 
 ## Accounting
 
-Double-entry ledger per branch (`Account`, `JournalEntry`, `JournalLine`). Default chart in `DEFAULT_ACCOUNTS`; codes in `ACCOUNT`. Statements are computed from posted lines only.
+Double-entry ledger per branch (`Account`, `JournalEntry`, `JournalLine`). Default chart in `DEFAULT_ACCOUNTS`; codes in `ACCOUNT`. Statements are computed from posted lines only, by Dench's pure engine in `src/lib/accounting/statements.ts`: `AccountingService.loadLedger(branchId | null, window)` turns the ledger into his `LedgerAccount[]` + `Posting[]` (district-wide merges accounts by code), then `computeIncomeStatement / computeBalanceSheet / computeCashFlow / computeTrialBalance` run on them. Periods are inclusive Manila date keys; our `DateRange` is converted with `toKeys()`.
+
+- Every account has a `subtype` (his `AccountSubtype`) that places it on the statements; `type` follows from it. New account codes must fit the subtype's range (`validateAccountInput`). `cashFlowGroup` stores CASH or the cash-flow category, including overrides (2100/2110 payouts are FINANCING).
+- Manual entries are multi-line, validated by his `validateJournalLines`; they are never edited, only reversed (`reverseManualEntry`, `JournalEntry.reversesId`).
+- Schema changes that would need a reset: Prisma refuses `--force-reset` from an AI agent. Migrate in place instead (see `scripts/migrations/`).
 
 | Event | Debit | Credit |
 |---|---|---|
@@ -116,6 +128,7 @@ Double-entry ledger per branch (`Account`, `JournalEntry`, `JournalLine`). Defau
 - Revenue/expense accounts are never closed. The balance sheet shows "Net Surplus Earned to Date" computed, offset by account 3900.
 - Voids and reopened cash counts post mirror-image reversing entries (`reverseEntries`).
 - Tax rate comes from system settings (default 5%, added on top of prices).
+- Cash counts can be entered by denomination (`CashCount.denominations`, his `DENOMINATIONS`/`countDenominations`) or as one total. Expected cash = opening float + cash sales + member payments collected.
 
 ## Auth & roles
 

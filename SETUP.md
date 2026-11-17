@@ -90,7 +90,9 @@ same passwords. Change these passwords before real use.
 | `npm run lint` | ESLint |
 | `npx tsc --noEmit` | Type-check |
 | `npm run db:seed` | Wipe and reseed the database |
-| `npm run test:system` | 34 end-to-end checks of the core engine against the database |
+| `npm run test:system` | 40 end-to-end checks of the core engine against the database |
+| `npm run test:financial-reports` | Statement maths, plus read-only checks that every cooperative's books balance (50 checks) |
+| `npm run test:daily-sales` | Daily-sales calculations: readings, vendor split, cash count (16 checks, no database) |
 | `npm run test:surplus-engine` | 14 checks of the surplus distribution math (no database) |
 | `npm run test:routes` | Loads every page as every role (needs `npm run dev` running) |
 

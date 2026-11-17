@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import prisma from '../src/lib/prisma';
 import { hashPassword, verifyPassword, createSessionToken, readSessionToken } from '../src/lib/auth';
 import { canAccess } from '../src/lib/roles';
-import { addDays, manilaToday, rangeOf, yearRange } from '../src/lib/dates';
+import { addDays, isDateString, manilaToday, rangeOf, yearRange } from '../src/lib/dates';
 import { ACCOUNT, AccountingService } from '../src/services/accountingService';
 import { BranchService } from '../src/services/branchService';
 import { InventoryService } from '../src/services/inventoryService';
@@ -105,6 +105,17 @@ async function main() {
       const forged = `${Buffer.from(JSON.stringify({ uid: cashier.id, role: 'ADMIN', exp: 9999999999 })).toString('base64url')}.${token.split('.')[1]}`;
       assert.equal(readSessionToken(forged), null);
       assert.equal(readSessionToken('garbage'), null);
+    });
+
+    await test('Only real calendar dates are accepted', async () => {
+      assert.ok(isDateString('2024-02-29'));
+      assert.ok(!isDateString('2025-02-29'));
+      assert.ok(!isDateString('2026-02-30'));
+      assert.ok(!isDateString('2026-13-01'));
+      await assert.rejects(
+        SalesService.submitCashCount({ branchId: branch.id, userId: null }, { date: '2026-02-30', cashierId: 'x', openingFloat: 0, countedCash: 0 }),
+        /valid date/
+      );
     });
 
     await test('Route access follows the role', async () => {

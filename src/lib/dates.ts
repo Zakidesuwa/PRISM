@@ -17,10 +17,15 @@ export function manilaToday(): string {
   return manilaDateOf(new Date());
 }
 
+/**
+ * A real calendar date written YYYY-MM-DD. Date.parse alone accepts dates
+ * such as 2026-02-30 and rolls them into March; the round trip (Dench's
+ * isValidDateKey rule) rejects them.
+ */
 export function isDateString(value: unknown): value is string {
-  return (
-    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value))
-  );
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 /** Midnight in Manila at the start of the given business date. */
