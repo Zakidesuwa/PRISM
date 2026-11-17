@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import prisma from '../src/lib/prisma';
 import { hashPassword, verifyPassword, createSessionToken, readSessionToken } from '../src/lib/auth';
 import { canAccess } from '../src/lib/roles';
-import { manilaToday, rangeOf, yearRange } from '../src/lib/dates';
+import { addDays, manilaToday, rangeOf, yearRange } from '../src/lib/dates';
 import { ACCOUNT, AccountingService } from '../src/services/accountingService';
 import { BranchService } from '../src/services/branchService';
 import { InventoryService } from '../src/services/inventoryService';
@@ -376,6 +376,42 @@ async function main() {
       });
       near(result.variance, -8, 'variance');
       near(await balanceOf(branch.id, ACCOUNT.CASH_SHORTAGE), 8, 'cash shortage');
+    });
+
+    await test('A drawer can be counted by bills and coins', async () => {
+      // Yesterday had no sales here, so the drawer should hold just the float.
+      const yesterday = addDays(today, -1);
+      const result = await SalesService.submitCashCount(ctx, {
+        date: yesterday,
+        cashierId: cashier.id,
+        openingFloat: 500,
+        denominations: { '200': 2, '50': 1, '20': 2, '5': 1, '0.25': 4 },
+      });
+      near(result.expectedCash, 500, 'expected');
+      near(result.variance, -4, 'counted 496 against 500');
+      const drawer = (await SalesService.getDrawers(branch.id, yesterday, cashier.id))[0];
+      assert.deepEqual(drawer.count!.denominations, { '200': 2, '50': 1, '20': 2, '5': 1, '0.25': 4 });
+      near(drawer.count!.countedCash, 496, 'stored total');
+      await assert.rejects(
+        SalesService.submitCashCount(ctx, { date: addDays(today, -2), cashierId: cashier.id, openingFloat: 0, denominations: { '3': 1 } }),
+        /Unknown denomination/
+      );
+    });
+
+    await test('Sales reading has the average sale, member split and hourly sales', async () => {
+      const reading = await SalesService.getSalesReading(branch.id, today);
+      near(reading.memberSales + reading.walkInSales, reading.totalCollected, 'member + walk-in');
+      near(reading.averageSale, Math.round((reading.totalCollected / reading.transactionCount) * 100) / 100, 'average');
+      near(reading.hourly.reduce((sum, bucket) => sum + bucket.sales, 0), reading.totalCollected, 'hourly adds up');
+      assert.ok(reading.firstTransactionNo && reading.lastTransactionNo);
+      assert.equal(reading.hourly.reduce((sum, bucket) => sum + bucket.transactions, 0), reading.transactionCount);
+    });
+
+    await test('Vendor split shows the coop-owned goods beside the vendors', async () => {
+      const coop = await SalesService.getCoopOwnedSales(branch.id, rangeOf(today, today));
+      const vendors = await SalesService.getVendorSplit(branch.id, rangeOf(today, today));
+      const reading = await SalesService.getSalesReading(branch.id, today);
+      near(coop.grossSales + vendors.reduce((sum, v) => sum + v.grossSales, 0), reading.grossSales, 'all sales split');
     });
 
     // ---------- Financial reports ----------

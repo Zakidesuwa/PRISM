@@ -22,7 +22,7 @@ import {
   reconcileCash,
   validateDenominationCounts,
 } from '../src/lib/dailySales/calculations';
-import { getDemoDayTransactions } from '../src/data/dailySalesMockData';
+import { getDemoDayTransactions } from './fixtures/dailySalesDemoDay';
 
 let passed = 0;
 function test(name: string, fn: () => void) {

@@ -9,7 +9,9 @@ export async function submitCashCountAction(input: {
   date: string;
   cashierId: string;
   openingFloat: string;
-  countedCash: string;
+  /** Piece count per bill and coin. When given, the counted cash is their total. */
+  denominations?: Record<string, number> | null;
+  countedCash?: string;
   notes?: string;
 }) {
   return branchAction(

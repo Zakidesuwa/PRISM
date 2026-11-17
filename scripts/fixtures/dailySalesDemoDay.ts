@@ -1,12 +1,12 @@
-// src/data/dailySalesMockData.ts
+// scripts/fixtures/dailySalesDemoDay.ts
 //
-// Demo transactions for the Daily Sales module, used only when the database is
-// not reachable. Generated deterministically from the date key (seeded LCG, not
+// A generated sales day for scripts/verify-daily-sales.ts (Dench's test
+// fixture). Test data only: the app never shows it. Generated deterministically from the date key (seeded LCG, not
 // Math.random) so server and client renders always agree and the same date
 // always shows the same day.
 
-import { dayRange } from '@/lib/dailySales/businessDate';
-import type { SaleTransactionRow, SaleItemRow } from '@/lib/dailySales/calculations';
+import { dayRange } from '../../src/lib/dailySales/businessDate';
+import type { SaleTransactionRow, SaleItemRow } from '../../src/lib/dailySales/calculations';
 // His dailySalesService (which defined this) was not carried over in the merge.
 interface CashierOption {
   id: string;

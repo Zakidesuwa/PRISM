@@ -7,17 +7,35 @@ import prisma from '@/lib/prisma';
 import { ZERO, num, optionalText, requireText, round2, toAmount } from '@/lib/money';
 import { dayRange, isDateString, manilaToday, type DateRange } from '@/lib/dates';
 import type { Ctx } from './context';
+import {
+  computeDailySummary,
+  countDenominations,
+  validateDenominationCounts,
+  type DenominationCounts,
+  type HourlyBucket,
+  type SaleTransactionRow,
+} from '@/lib/dailySales/calculations';
 import { ACCOUNT, AccountingService } from './accountingService';
 import { AuditService } from './auditService';
 
 export interface SalesReading {
   date: string;
   transactionCount: number;
+  firstTransactionNo: string | null;
+  lastTransactionNo: string | null;
   itemsSold: number;
+  /** Before tax. (Dench's summary calls this netSales.) */
   grossSales: number;
   taxCollected: number;
+  /** Tax included: what customers paid. */
   totalCollected: number;
   costOfGoods: number;
+  averageSale: number;
+  memberSales: number;
+  memberTransactions: number;
+  walkInSales: number;
+  /** Sales by hour of the day (Manila), first to last busy hour. */
+  hourly: HourlyBucket[];
   voidedCount: number;
   voidedAmount: number;
   byPayment: { method: string; count: number; amount: number }[];
@@ -33,6 +51,7 @@ export interface DrawerRow {
   collections: number;
   count: {
     id: number;
+    denominations: DenominationCounts | null;
     openingFloat: number;
     expectedCash: number;
     countedCash: number;
@@ -80,52 +99,63 @@ export class SalesService {
       include: { items: true, cashier: { select: { name: true } } },
     });
 
-    const completed = sales.filter((sale) => sale.status === 'COMPLETED');
-    const voided = sales.filter((sale) => sale.status === 'VOIDED');
+    // Dench's daily summary (src/lib/dailySales/calculations.ts) does the
+    // counting; it works in centavos, so the totals tie to the centavo.
+    const rows: SaleTransactionRow[] = sales.map((sale) => ({
+      transactionNumber: sale.transactionNumber,
+      createdAt: sale.createdAt,
+      cashierId: sale.cashierId,
+      cashierName: sale.cashier.name,
+      memberId: sale.memberId,
+      paymentMethod: sale.paymentMethod,
+      status: sale.status,
+      subtotal: num(sale.subtotal),
+      taxAmount: num(sale.taxAmount),
+      totalAmount: num(sale.totalAmount),
+      items: sale.items.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        category: item.category,
+        quantity: item.quantity,
+        subtotal: num(item.subtotal),
+        vendorId: item.vendorId,
+        vendorName: null,
+        coopSharePercent: null,
+      })),
+    }));
+    const summary = computeDailySummary(rows);
 
+    // Payment-method totals are ours: the summary does not split by method.
     const byPayment = new Map<string, { count: number; amount: number }>();
-    const byCashier = new Map<string, { count: number; amount: number }>();
-    const cashierNames = new Map<string, string>();
-    const byCategory = new Map<string, { count: number; amount: number }>();
-    const byItem = new Map<string, { count: number; amount: number }>();
-
-    for (const sale of completed) {
-      add(byPayment, sale.paymentMethod, num(sale.totalAmount));
-      add(byCashier, sale.cashierId, num(sale.totalAmount));
-      cashierNames.set(sale.cashierId, sale.cashier.name);
-      for (const item of sale.items) {
-        add(byCategory, item.category, num(item.subtotal), item.quantity);
-        add(byItem, item.productName, num(item.subtotal), item.quantity);
-      }
-    }
-
-    const sum = (pick: (sale: (typeof completed)[number]) => Prisma.Decimal) =>
-      num(completed.reduce((acc, sale) => acc.add(pick(sale)), ZERO));
+    const completed = sales.filter((sale) => sale.status === 'COMPLETED');
+    for (const sale of completed) add(byPayment, sale.paymentMethod, num(sale.totalAmount));
 
     return {
       date,
-      transactionCount: completed.length,
-      itemsSold: completed.reduce((acc, sale) => acc + sale.items.reduce((n, item) => n + item.quantity, 0), 0),
-      grossSales: sum((sale) => sale.subtotal),
-      taxCollected: sum((sale) => sale.taxAmount),
-      totalCollected: sum((sale) => sale.totalAmount),
-      costOfGoods: sum((sale) => sale.costOfGoods),
-      voidedCount: voided.length,
-      voidedAmount: num(voided.reduce((acc, sale) => acc.add(sale.totalAmount), ZERO)),
+      transactionCount: summary.transactionCount,
+      firstTransactionNo: summary.firstTransactionNo,
+      lastTransactionNo: summary.lastTransactionNo,
+      itemsSold: summary.itemsSold,
+      grossSales: summary.netSales,
+      taxCollected: summary.taxAmount,
+      totalCollected: summary.grossSales,
+      costOfGoods: num(completed.reduce((acc, sale) => acc.add(sale.costOfGoods), ZERO)),
+      averageSale: summary.averageTicket,
+      memberSales: summary.memberSales,
+      memberTransactions: summary.memberTransactions,
+      walkInSales: summary.walkInSales,
+      hourly: summary.hourly,
+      voidedCount: summary.voidCount,
+      voidedAmount: summary.voidAmount,
       byPayment: [...byPayment].map(([method, v]) => ({ method, count: v.count, amount: cents(v.amount) })),
-      byCashier: [...byCashier].map(([id, v]) => ({
-        cashierId: id,
-        name: cashierNames.get(id) ?? 'Unknown',
-        count: v.count,
-        amount: cents(v.amount),
+      byCashier: summary.cashiers.map((row) => ({
+        cashierId: row.cashierId,
+        name: row.cashierName,
+        count: row.transactions,
+        amount: row.sales,
       })),
-      byCategory: [...byCategory]
-        .map(([category, v]) => ({ category, quantity: v.count, amount: cents(v.amount) }))
-        .sort((a, b) => b.amount - a.amount),
-      topItems: [...byItem]
-        .map(([name, v]) => ({ name, quantity: v.count, amount: cents(v.amount) }))
-        .sort((a, b) => b.quantity - a.quantity)
-        .slice(0, 8),
+      byCategory: summary.categories.map((row) => ({ category: row.category, quantity: row.quantity, amount: row.sales })),
+      topItems: summary.topProducts.map((row) => ({ name: row.name, quantity: row.quantity, amount: row.sales })),
     };
   }
 
@@ -195,6 +225,7 @@ export class SalesService {
           count: count
             ? {
                 id: count.id,
+                denominations: (count.denominations as DenominationCounts | null) ?? null,
                 openingFloat: num(count.openingFloat),
                 expectedCash: num(count.expectedCash),
                 countedCash: num(count.countedCash),
@@ -214,13 +245,34 @@ export class SalesService {
    */
   static async submitCashCount(
     ctx: Ctx,
-    input: { date: string; cashierId: string; openingFloat: unknown; countedCash: unknown; notes?: string }
+    input: {
+      date: string;
+      cashierId: string;
+      openingFloat: unknown;
+      /** Bill and coin piece counts (Dench's cash count). Takes precedence over countedCash. */
+      denominations?: DenominationCounts | null;
+      countedCash?: unknown;
+      notes?: string;
+    }
   ) {
     if (!isDateString(input.date)) throw new Error('Choose a valid date.');
     if (input.date > manilaToday()) throw new Error('A cash count cannot be for a future date.');
 
     const openingFloat = toAmount(input.openingFloat, 'Opening float', { allowZero: true });
-    const countedCash = toAmount(input.countedCash, 'Counted cash', { allowZero: true });
+
+    // Counting by denomination avoids adding-up mistakes at the end of a shift.
+    let denominations: DenominationCounts | null = null;
+    let countedCash: Prisma.Decimal;
+    if (input.denominations && Object.keys(input.denominations).length > 0) {
+      denominations = Object.fromEntries(
+        Object.entries(input.denominations).filter(([, pieces]) => Number(pieces) > 0).map(([denom, pieces]) => [denom, Number(pieces)])
+      );
+      const error = validateDenominationCounts(denominations);
+      if (error) throw new Error(error);
+      countedCash = new Prisma.Decimal(countDenominations(denominations).toFixed(2));
+    } else {
+      countedCash = toAmount(input.countedCash, 'Counted cash', { allowZero: true });
+    }
 
     const cashier = await prisma.user.findFirst({ where: { id: input.cashierId, branchId: ctx.branchId } });
     if (!cashier) throw new Error('Cashier not found.');
@@ -256,6 +308,7 @@ export class SalesService {
           expectedCash,
           countedCash,
           variance,
+          denominations: denominations ?? undefined,
           notes: optionalText(input.notes),
           createdById: ctx.userId!,
         },
@@ -371,6 +424,18 @@ export class SalesService {
         balanceDue: num(earned.sub(paid)),
       };
     });
+  }
+
+  /**
+   * The cooperative's own goods for the same period, shown beside the vendors
+   * (Dench's "coop-owned goods" line): 100% of these sales stay with the coop.
+   */
+  static async getCoopOwnedSales(branchId: number, range: DateRange) {
+    const totals = await prisma.transactionItem.aggregate({
+      where: { vendorId: null, transaction: { branchId, status: 'COMPLETED', createdAt: { gte: range.from, lt: range.to } } },
+      _sum: { quantity: true, subtotal: true },
+    });
+    return { unitsSold: totals._sum.quantity ?? 0, grossSales: num(totals._sum.subtotal) };
   }
 
   static async saveVendor(

@@ -7,6 +7,12 @@ import Modal from '@/components/Modal/Modal';
 import { useAction } from '@/lib/useAction';
 import { longDate } from '@/lib/dates';
 import { formatCurrency, formatManilaTime } from '@/utils/formatters';
+import {
+  DENOMINATIONS,
+  countDenominations,
+  denominationLabel,
+  type DenominationCounts,
+} from '@/lib/dailySales/calculations';
 import { payVendorAction, reopenCashCountAction, saveVendorAction, submitCashCountAction } from '@/actions/salesActions';
 import type { DrawerRow, SalesReading, VendorRow } from '@/services/salesService';
 import type { Receipt } from '@/services/transactionService';
@@ -21,6 +27,7 @@ interface Props {
   drawers: DrawerRow[];
   sales: Receipt[];
   vendors: VendorRow[];
+  coopOwned: { unitsSold: number; grossSales: number } | null;
 }
 
 const METHOD_LABEL: Record<string, string> = { CASH: 'Cash', GCASH: 'GCash', CHARGE: 'Charge to member' };
@@ -39,6 +46,9 @@ export default function DailySalesClient(props: Props) {
 
   const [openingFloat, setOpeningFloat] = useState('1000');
   const [countedCash, setCountedCash] = useState('');
+  // Count by bill and coin (Dench's cash count), or type one total.
+  const [countMode, setCountMode] = useState<'pieces' | 'total'>('pieces');
+  const [pieces, setPieces] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [vendorForm, setVendorForm] = useState({ name: '', contactPerson: '', phone: '', commissionPercent: '15' });
   const [amount, setAmount] = useState('');
@@ -54,10 +64,19 @@ export default function DailySalesClient(props: Props) {
   ];
 
   const expected = (drawer: DrawerRow, float: number) => float + drawer.cashSales + drawer.collections;
+  const pieceCounts: DenominationCounts = Object.fromEntries(
+    Object.entries(pieces)
+      .filter(([, value]) => value !== '')
+      .map(([denom, value]) => [denom, Math.max(0, Math.floor(Number(value) || 0))])
+  );
+  const piecesTotal = countDenominations(pieceCounts);
+  const counted = countMode === 'pieces' ? (Object.keys(pieceCounts).length ? piecesTotal : null) : countedCash === '' ? null : Number(countedCash);
   const liveVariance =
-    dialog?.kind === 'count' && countedCash !== ''
-      ? Math.round((Number(countedCash) - expected(dialog.drawer, Number(openingFloat) || 0)) * 100) / 100
+    dialog?.kind === 'count' && counted !== null
+      ? Math.round((counted - expected(dialog.drawer, Number(openingFloat) || 0)) * 100) / 100
       : null;
+  const maxHourly = Math.max(1, ...reading.hourly.map((bucket) => bucket.sales));
+  const hourLabel = (hour: number) => `${hour % 12 === 0 ? 12 : hour % 12}${hour < 12 ? 'am' : 'pm'}`;
 
   const varianceBadge = (variance: number) =>
     variance === 0 ? (
@@ -133,6 +152,64 @@ export default function DailySalesClient(props: Props) {
               <div className={ui.statHint}>{reading.voidedCount} sales</div>
             </div>
           </div>
+
+          {/* Dench's summary figures */}
+          <div className={ui.statGrid}>
+            <div className={ui.stat}>
+              <div className={ui.statLabel}>Average sale</div>
+              <div className={ui.statValue}>{formatCurrency(reading.averageSale)}</div>
+              <div className={ui.statHint}>Per completed sale, tax included</div>
+            </div>
+            <div className={ui.stat}>
+              <div className={ui.statLabel}>Member sales</div>
+              <div className={ui.statValue}>{formatCurrency(reading.memberSales)}</div>
+              <div className={ui.statHint}>{reading.memberTransactions} sales · counts toward patronage</div>
+            </div>
+            <div className={ui.stat}>
+              <div className={ui.statLabel}>Walk-in sales</div>
+              <div className={ui.statValue}>{formatCurrency(reading.walkInSales)}</div>
+            </div>
+            <div className={ui.stat}>
+              <div className={ui.statLabel}>Receipt range</div>
+              <div className={ui.statValue} style={{ fontSize: '1rem' }}>
+                {reading.firstTransactionNo ? `${reading.firstTransactionNo} – ${reading.lastTransactionNo}` : '—'}
+              </div>
+              <div className={ui.statHint}>First and last completed sale</div>
+            </div>
+          </div>
+
+          {reading.hourly.length > 0 && (
+            <section className={ui.card}>
+              <h2 className={ui.cardTitle} style={{ marginBottom: 12 }}>Sales by hour</h2>
+              <div
+                role="img"
+                aria-label={`Busiest hour: ${hourLabel(reading.hourly.reduce((a, b) => (b.sales > a.sales ? b : a)).hour)}`}
+                style={{ display: 'flex', alignItems: 'flex-end', gap: 8, height: 140 }}
+              >
+                {reading.hourly.map((bucket) => (
+                  <div key={bucket.hour} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', height: '100%' }}>
+                    <div style={{ flex: 1, width: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      <span className={ui.muted} style={{ fontSize: 10 }}>
+                        {bucket.sales > 0 ? `₱${Math.round(bucket.sales)}` : ''}
+                      </span>
+                      <div
+                        title={`${hourLabel(bucket.hour)}: ${formatCurrency(bucket.sales)}, ${bucket.transactions} sales`}
+                        style={{
+                          width: '100%',
+                          maxWidth: 36,
+                          height: `${(bucket.sales / maxHourly) * 80}%`,
+                          minHeight: bucket.sales > 0 ? 2 : 0,
+                          background: 'var(--color-primary)',
+                          borderRadius: '4px 4px 0 0',
+                        }}
+                      />
+                    </div>
+                    <span className={ui.muted} style={{ marginTop: 4 }}>{hourLabel(bucket.hour)}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <div className={ui.grid2}>
             <section className={ui.card}>
@@ -296,6 +373,8 @@ export default function DailySalesClient(props: Props) {
                           onClick={() => {
                             setOpeningFloat('1000');
                             setCountedCash('');
+                            setPieces({});
+                            setCountMode('pieces');
                             setNotes('');
                             setDialog({ kind: 'count', drawer });
                           }}
@@ -402,7 +481,40 @@ export default function DailySalesClient(props: Props) {
                     </td>
                   </tr>
                 )}
+                {props.coopOwned && (
+                  <tr>
+                    <td>
+                      <div className={ui.strong}>Coop-owned goods</div>
+                      <div className={ui.muted}>Not consigned: all of it stays with the cooperative</div>
+                    </td>
+                    <td className={ui.num}>100%</td>
+                    <td className={ui.num}>{props.coopOwned.unitsSold}</td>
+                    <td className={ui.num}>{formatCurrency(props.coopOwned.grossSales)}</td>
+                    <td className={ui.num}>{formatCurrency(props.coopOwned.grossSales)}</td>
+                    <td className={ui.num}>—</td>
+                    <td className={ui.num}>—</td>
+                    <td className={ui.noPrint} />
+                  </tr>
+                )}
               </tbody>
+              {props.coopOwned && (
+                <tfoot>
+                  <tr>
+                    <td>All sales</td>
+                    <td />
+                    <td className={ui.num}>{vendors.reduce((sum, v) => sum + v.unitsSold, 0) + props.coopOwned.unitsSold}</td>
+                    <td className={ui.num}>
+                      {formatCurrency(vendors.reduce((sum, v) => sum + v.grossSales, 0) + props.coopOwned.grossSales)}
+                    </td>
+                    <td className={ui.num}>
+                      {formatCurrency(vendors.reduce((sum, v) => sum + v.commission, 0) + props.coopOwned.grossSales)}
+                    </td>
+                    <td className={ui.num}>{formatCurrency(vendors.reduce((sum, v) => sum + v.vendorShare, 0))}</td>
+                    <td className={ui.num}>{formatCurrency(vendors.reduce((sum, v) => sum + v.balanceDue, 0))}</td>
+                    <td className={ui.noPrint} />
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         </section>
@@ -419,10 +531,60 @@ export default function DailySalesClient(props: Props) {
               <span className={ui.label}>Opening float (₱)</span>
               <input className={ui.input} inputMode="decimal" value={openingFloat} onChange={(event) => setOpeningFloat(event.target.value)} />
             </label>
-            <label className={ui.field}>
-              <span className={ui.label}>Cash counted in drawer (₱)</span>
-              <input className={ui.input} inputMode="decimal" autoFocus value={countedCash} onChange={(event) => setCountedCash(event.target.value)} />
-            </label>
+            <div className={ui.field}>
+              <span className={ui.label}>Count the drawer by</span>
+              <div className={ui.row} role="group" aria-label="Count method">
+                <button
+                  type="button"
+                  className={`${ui.btn} ${ui.btnSmall} ${countMode === 'pieces' ? ui.btnPrimary : ''}`}
+                  aria-pressed={countMode === 'pieces'}
+                  onClick={() => setCountMode('pieces')}
+                >
+                  Bills and coins
+                </button>
+                <button
+                  type="button"
+                  className={`${ui.btn} ${ui.btnSmall} ${countMode === 'total' ? ui.btnPrimary : ''}`}
+                  aria-pressed={countMode === 'total'}
+                  onClick={() => setCountMode('total')}
+                >
+                  One total
+                </button>
+              </div>
+            </div>
+            {countMode === 'pieces' ? (
+              <div className={ui.span2}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 8 }}>
+                  {DENOMINATIONS.map((denom) => {
+                    const key = String(denom);
+                    const count = Math.floor(Number(pieces[key]) || 0);
+                    return (
+                      <label key={key} className={ui.field}>
+                        <span className={ui.label}>
+                          {denominationLabel(denom)} × pieces
+                          {count > 0 && <span className={ui.muted}> = {formatCurrency(count * denom)}</span>}
+                        </span>
+                        <input
+                          className={ui.input}
+                          inputMode="numeric"
+                          aria-label={`Number of ${denominationLabel(denom)}`}
+                          value={pieces[key] ?? ''}
+                          onChange={(event) => setPieces({ ...pieces, [key]: event.target.value.replace(/[^0-9]/g, '') })}
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className={ui.muted} style={{ marginTop: 8 }}>
+                  Counted: <strong>{formatCurrency(piecesTotal)}</strong>
+                </div>
+              </div>
+            ) : (
+              <label className={ui.field}>
+                <span className={ui.label}>Cash counted in drawer (₱)</span>
+                <input className={ui.input} inputMode="decimal" autoFocus value={countedCash} onChange={(event) => setCountedCash(event.target.value)} />
+              </label>
+            )}
             <label className={`${ui.field} ${ui.span2}`}>
               <span className={ui.label}>Notes</span>
               <input className={ui.input} value={notes} onChange={(event) => setNotes(event.target.value)} />
@@ -446,10 +608,17 @@ export default function DailySalesClient(props: Props) {
             </button>
             <button
               className={`${ui.btn} ${ui.btnPrimary}`}
-              disabled={pending || countedCash === ''}
+              disabled={pending || counted === null}
               onClick={() =>
                 run(
-                  () => submitCashCountAction({ date, cashierId: dialog.drawer.cashierId, openingFloat, countedCash, notes }),
+                  () =>
+                    submitCashCountAction({
+                      date,
+                      cashierId: dialog.drawer.cashierId,
+                      openingFloat,
+                      ...(countMode === 'pieces' ? { denominations: pieceCounts } : { countedCash }),
+                      notes,
+                    }),
                   close
                 )
               }

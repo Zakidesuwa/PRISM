@@ -26,6 +26,7 @@ export default async function DailySalesPage({ searchParams }: PageProps) {
     TransactionService.list(user.branchId, { range: dayRange(date), cashierId: scope, take: 300 }),
     isManager ? SalesService.getVendorSplit(user.branchId, dayRange(date)) : Promise.resolve([]),
   ]);
+  const coopOwned = isManager ? await SalesService.getCoopOwnedSales(user.branchId, dayRange(date)) : null;
 
   const tab = ['reading', 'cash', 'vendors'].includes(params.tab ?? '') ? params.tab! : 'reading';
 
@@ -40,6 +41,7 @@ export default async function DailySalesPage({ searchParams }: PageProps) {
       drawers={drawers}
       sales={sales}
       vendors={vendors}
+      coopOwned={coopOwned}
     />
   );
 }
