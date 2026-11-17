@@ -328,8 +328,8 @@ async function seedBranch(config: (typeof BRANCHES)[number], index: number, memb
       }
       if (offset % 14 < 7) {
         const expenseCtx = ctxFor(manager.id, at(date, 17));
-        await AccountingService.postManualEntry(expenseCtx, { description: 'Store staff allowance', debitCode: '6100', creditCode: '1010', amount: Math.round(config.salesPerDay * 55) });
-        await AccountingService.postManualEntry(expenseCtx, { description: 'Electricity and water share', debitCode: '6200', creditCode: '1010', amount: Math.round(config.salesPerDay * 22) });
+        await AccountingService.postManualEntry(expenseCtx, { description: 'Store staff allowance', lines: [{ code: '6100', debit: Math.round(config.salesPerDay * 55), credit: 0 }, { code: '1010', debit: 0, credit: Math.round(config.salesPerDay * 55) }] });
+        await AccountingService.postManualEntry(expenseCtx, { description: 'Electricity and water share', lines: [{ code: '6200', debit: Math.round(config.salesPerDay * 22), credit: 0 }, { code: '1010', debit: 0, credit: Math.round(config.salesPerDay * 22) }] });
       }
     }
   }

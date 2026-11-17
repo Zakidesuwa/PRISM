@@ -200,8 +200,8 @@ export class AdminService {
 
     const flows = statements.map((statement, index) => ({
       month: monthLabel(months[index]),
-      income: statement.totalRevenue,
-      expenses: round2(statement.totalCostOfSales + statement.totalExpenses),
+      income: round2(statement.revenue.total + statement.otherIncome.total),
+      expenses: round2(statement.costOfSales.total + statement.operatingExpenses.total + statement.otherExpenses.total),
     }));
 
     const cashBalance = num(
@@ -269,15 +269,15 @@ export class AdminService {
         name: branch.name,
         address: branch.address,
         level: branch.level as UnitLevel,
-        monthlyProfit: current.netSurplus,
+        monthlyProfit: current.netIncome,
         stockStatus: info?.status ?? 'In Stock',
       },
       lastUpdated: longDate(lastSale ? manilaDateOf(lastSale.createdAt) : today),
-      monthlySales: current.totalRevenue,
-      salesChange: percentChange(current.totalRevenue, previous.totalRevenue),
-      netProfit: current.netSurplus,
-      profitChange: percentChange(current.netSurplus, previous.netSurplus),
-      efficiencyRatio: current.totalRevenue > 0 ? round2((current.grossProfit / current.totalRevenue) * 100) : 0,
+      monthlySales: current.revenue.total,
+      salesChange: percentChange(current.revenue.total, previous.revenue.total),
+      netProfit: current.netIncome,
+      profitChange: percentChange(current.netIncome, previous.netIncome),
+      efficiencyRatio: current.grossMarginPct === null ? 0 : round2(current.grossMarginPct),
       lowStockItems: (info?.low ?? 0) + (info?.out ?? 0),
       turnover: days.map((date) => ({
         day: weekdayLabel(date),

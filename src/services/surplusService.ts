@@ -68,7 +68,7 @@ export class SurplusService {
   /** Net surplus for the year, straight from the income statement. */
   static async getNetSurplus(branchId: number, fiscalYear: number): Promise<number> {
     const statement = await AccountingService.incomeStatement(branchId, yearRange(fiscalYear));
-    return statement.netSurplus;
+    return statement.netIncome;
   }
 
   static async getYears(branchId: number): Promise<number[]> {

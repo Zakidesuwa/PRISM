@@ -87,10 +87,12 @@ const CODE_PREFIX: Record<AccountSubtype, string[]> = {
   NON_CURRENT_LIABILITY: ['2'],
   EQUITY: ['3'],
   OPERATING_REVENUE: ['4'],
-  OTHER_INCOME: ['7'],
+  // Other income/expenses also accept the 4xxx/6xxx ranges: cooperatives that
+  // keep them next to their operating accounts (e.g. 4900 Other Income) can.
+  OTHER_INCOME: ['7', '4'],
   COST_OF_SALES: ['5'],
   OPERATING_EXPENSE: ['6'],
-  OTHER_EXPENSE: ['7'],
+  OTHER_EXPENSE: ['7', '6'],
 };
 
 export const CODE_RANGES_HELP =

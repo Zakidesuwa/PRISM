@@ -392,32 +392,76 @@ async function main() {
     });
 
     await test('Income statement adds up', async () => {
-      const statement = await AccountingService.incomeStatement(branch.id, range);
-      near(statement.grossProfit, statement.totalRevenue - statement.totalCostOfSales, 'gross profit');
-      near(statement.netSurplus, statement.grossProfit - statement.totalExpenses, 'net surplus');
-      assert.ok(statement.revenue.some((line) => line.code === ACCOUNT.SALES));
+      const s = await AccountingService.incomeStatement(branch.id, range);
+      near(s.grossProfit, s.revenue.total - s.costOfSales.total, 'gross profit');
+      near(s.operatingIncome, s.grossProfit - s.operatingExpenses.total, 'operating income');
+      near(s.netIncome, s.operatingIncome + s.otherIncome.total - s.otherExpenses.total, 'net surplus');
+      assert.ok(s.revenue.lines.some((line) => line.code === ACCOUNT.SALES));
+      // Spoilage is an operating expense; the cash shortage is an "other" expense.
+      assert.ok(s.operatingExpenses.lines.some((line) => line.code === ACCOUNT.SPOILAGE));
+      assert.ok(s.otherExpenses.lines.some((line) => line.code === ACCOUNT.CASH_SHORTAGE));
     });
 
-    await test('Balance sheet balances', async () => {
+    await test('Trial balance balances and matches the ledger', async () => {
+      const t = await AccountingService.trialBalance(branch.id, range.to);
+      assert.ok(t.balanced, `debits ${t.totalDebit} vs credits ${t.totalCredit}`);
+      assert.ok(t.rows.length > 5);
+    });
+
+    await test('Balance sheet balances and net surplus flows into equity', async () => {
       const sheet = await AccountingService.balanceSheet(branch.id, range.to);
-      assert.ok(sheet.balanced, `assets ${sheet.totalAssets} vs ${sheet.totalLiabilities + sheet.totalEquity}`);
+      assert.ok(sheet.balanced, `off by ${sheet.difference}`);
+      const s = await AccountingService.incomeStatement(branch.id, range);
+      const ytd = sheet.equity.lines.find((line) => line.name.includes('year to date'));
+      near(ytd?.amount ?? 0, s.netIncome, 'year-to-date surplus in equity');
+      assert.ok(sheet.assets.find((section) => section.key === 'CASH')!.total > 0);
     });
 
     await test('Cash flow reconciles to the cash accounts', async () => {
       const flow = await AccountingService.cashFlow(branch.id, range);
-      near(flow.openingCash + flow.netChange, flow.closingCash, 'cash flow');
+      assert.ok(flow.reconciled, 'ending cash agrees with the ledger');
+      near(flow.beginningCash + flow.netChange, flow.endingCash, 'cash flow');
       const cash =
         (await balanceOf(branch.id, ACCOUNT.CASH)) + (await balanceOf(branch.id, ACCOUNT.EWALLET)) + (await balanceOf(branch.id, ACCOUNT.BANK));
-      near(flow.closingCash, cash, 'closing cash');
-      assert.ok(flow.financing.items.some((line) => line.code === ACCOUNT.SHARE_CAPITAL));
+      near(flow.endingCash, cash, 'closing cash');
+      const financing = flow.sections.find((section) => section.category === 'FINANCING')!;
+      assert.ok(financing.lines.some((line) => line.code === ACCOUNT.SHARE_CAPITAL));
     });
 
-    await test('Manual entries and new accounts work', async () => {
-      await AccountingService.createAccount(ctx, { code: '6500', name: 'Repairs', type: 'EXPENSE' });
-      await AccountingService.postManualEntry(ctx, { description: 'Fix shelf', debitCode: '6500', creditCode: ACCOUNT.CASH, amount: 12 });
-      near(await balanceOf(branch.id, '6500'), 12, 'repairs');
-      await assert.rejects(AccountingService.createAccount(ctx, { code: '6500', name: 'Dup', type: 'EXPENSE' }));
+    await test('Manual entries, new accounts and reversals work', async () => {
+      await AccountingService.createAccount(ctx, { code: '6950', name: 'Canteen Repairs', subtype: 'OPERATING_EXPENSE' });
+      const entry = await AccountingService.postManualEntry(ctx, {
+        description: 'Fix shelf and buy mop',
+        lines: [
+          { code: '6950', debit: '12', credit: '' },
+          { code: '6300', debit: '8.50', credit: '' },
+          { code: ACCOUNT.CASH, debit: '', credit: '20.50' },
+        ],
+      });
+      near(await balanceOf(branch.id, '6950'), 12, 'repairs');
+      // Dench's validation rules: balanced, two accounts, code fits the group.
+      await assert.rejects(
+        AccountingService.postManualEntry(ctx, { description: 'x', lines: [{ code: '6950', debit: '5', credit: '' }, { code: ACCOUNT.CASH, debit: '', credit: '4' }] }),
+        /must be equal/
+      );
+      await assert.rejects(AccountingService.createAccount(ctx, { code: '6950', name: 'Dup', subtype: 'OPERATING_EXPENSE' }), /already in use/);
+      await assert.rejects(AccountingService.createAccount(ctx, { code: '1999', name: 'Wrong', subtype: 'OPERATING_EXPENSE' }), /does not fit/);
+
+      await AccountingService.reverseManualEntry(ctx, entry.id, 'Entered twice');
+      near(await balanceOf(branch.id, '6950'), 0, 'repairs after reversal');
+      await assert.rejects(AccountingService.reverseManualEntry(ctx, entry.id, 'again'), /already been reversed/);
       assert.ok((await AccountingService.balanceSheet(branch.id, range.to)).balanced);
+    });
+
+    await test('System accounts and accounts with a balance stay active', async () => {
+      const accounts = await AccountingService.listAccounts(branch.id);
+      const custom = accounts.find((account) => account.code === '6950')!;
+      await assert.rejects(AccountingService.setAccountActive(ctx, accounts.find((a) => a.code === ACCOUNT.CASH)!.id, false), /automatically/);
+      await AccountingService.setAccountActive(ctx, custom.id, false);
+      await assert.rejects(
+        AccountingService.postManualEntry(ctx, { description: 'x', lines: [{ code: '6950', debit: '1', credit: '' }, { code: ACCOUNT.CASH, debit: '', credit: '1' }] }),
+        /inactive/
+      );
     });
 
     // ---------- Net surplus distribution ----------

@@ -28,6 +28,21 @@ enum AccountType {
   EXPENSE
 }
 
+/// Where an account sits on the statements (from Dench's chart of accounts).
+enum AccountSubtype {
+  CASH
+  CURRENT_ASSET
+  NON_CURRENT_ASSET
+  CURRENT_LIABILITY
+  NON_CURRENT_LIABILITY
+  EQUITY
+  OPERATING_REVENUE
+  OTHER_INCOME
+  COST_OF_SALES
+  OPERATING_EXPENSE
+  OTHER_EXPENSE
+}
+
 model SchoolBranch {
   id                 Int      @id @default(autoincrement())
   name               String   @unique
@@ -267,15 +282,17 @@ model TransactionItem {
 // ---------- General ledger ----------
 
 model Account {
-  id            Int          @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   branchId      Int
-  branch        SchoolBranch @relation(fields: [branchId], references: [id])
+  branch        SchoolBranch   @relation(fields: [branchId], references: [id])
   code          String
   name          String
   type          AccountType
-  cashFlowGroup String       @default("OPERATING") // CASH, OPERATING, INVESTING, FINANCING
-  isSystem      Boolean      @default(false)
-  isActive      Boolean      @default(true)
+  subtype       AccountSubtype
+  description   String?
+  cashFlowGroup String         @default("OPERATING") // CASH, OPERATING, INVESTING, FINANCING
+  isSystem      Boolean        @default(false)
+  isActive      Boolean        @default(true)
 
   lines JournalLine[]
 
@@ -288,10 +305,15 @@ model JournalEntry {
   branch      SchoolBranch @relation(fields: [branchId], references: [id])
   date        DateTime     @default(now())
   description String
-  sourceType  String // SALE, COGS, VOID, DELIVERY, SPOILAGE, MEMBER_PAYMENT, SHARE_CAPITAL, CASH_COUNT, VENDOR_PAYOUT, DISTRIBUTION, MANUAL
+  sourceType  String // SALE, COGS, VOID, DELIVERY, SPOILAGE, MEMBER_PAYMENT, SHARE_CAPITAL, CASH_COUNT, VENDOR_PAYOUT, DISTRIBUTION, MANUAL, REVERSAL
   sourceId    String?
   createdById String?
   createdAt   DateTime     @default(now())
+
+  /// The manual entry this one reverses. Unique, so an entry is reversed at most once.
+  reversesId Int?          @unique
+  reverses   JournalEntry? @relation("Reversal", fields: [reversesId], references: [id])
+  reversedBy JournalEntry? @relation("Reversal")
 
   lines JournalLine[]
 
@@ -315,21 +337,23 @@ model JournalLine {
 // ---------- Daily sales ----------
 
 model CashCount {
-  id           Int          @id @default(autoincrement())
-  branchId     Int
-  branch       SchoolBranch @relation(fields: [branchId], references: [id])
-  businessDate String // YYYY-MM-DD, Asia/Manila
-  cashierId    String
-  cashier      User         @relation(fields: [cashierId], references: [id])
-  openingFloat Decimal      @db.Decimal(12, 2)
-  cashSales    Decimal      @db.Decimal(12, 2)
-  collections  Decimal      @db.Decimal(12, 2)
-  expectedCash Decimal      @db.Decimal(12, 2)
-  countedCash  Decimal      @db.Decimal(12, 2)
-  variance     Decimal      @db.Decimal(12, 2)
-  notes        String?
-  createdById  String
-  createdAt    DateTime     @default(now())
+  id            Int          @id @default(autoincrement())
+  branchId      Int
+  branch        SchoolBranch @relation(fields: [branchId], references: [id])
+  businessDate  String // YYYY-MM-DD, Asia/Manila
+  cashierId     String
+  cashier       User         @relation(fields: [cashierId], references: [id])
+  /// Piece count per bill and coin, e.g. { "1000": 3, "0.25": 4 }. Null when only a total was entered.
+  denominations Json?
+  openingFloat  Decimal      @db.Decimal(12, 2)
+  cashSales     Decimal      @db.Decimal(12, 2)
+  collections   Decimal      @db.Decimal(12, 2)
+  expectedCash  Decimal      @db.Decimal(12, 2)
+  countedCash   Decimal      @db.Decimal(12, 2)
+  variance      Decimal      @db.Decimal(12, 2)
+  notes         String?
+  createdById   String
+  createdAt     DateTime     @default(now())
 
   @@unique([branchId, businessDate, cashierId])
 }

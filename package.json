@@ -10,7 +10,9 @@
     "db:seed": "tsx prisma/seed.ts",
     "test:system": "tsx scripts/verify-system.ts",
     "test:routes": "tsx scripts/smoke-routes.ts",
-    "test:surplus-engine": "tsx scripts/verify-surplus-engine.ts"
+    "test:surplus-engine": "tsx scripts/verify-surplus-engine.ts",
+    "test:daily-sales": "tsx scripts/verify-daily-sales.ts",
+    "test:financial-reports": "tsx scripts/verify-financial-reports.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

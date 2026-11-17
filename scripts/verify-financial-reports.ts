@@ -8,7 +8,6 @@
 // is unreachable.
 
 import assert from 'node:assert/strict';
-import { PrismaClient } from '@prisma/client';
 import {
   DEFAULT_CHART_OF_ACCOUNTS,
   SystemAccountKey,
@@ -336,12 +335,122 @@ async function main() {
   });
 
   // ─── Part 2: the real ledger ─────────────────────────────────────────────
-  // The database checks were written against the original single-cooperative
-  // ledger schema, which was not carried over in the merge. They are rebuilt
-  // on the merged ledger in the follow-up commit.
+  // Dench's database checks, ported to the merged multi-cooperative ledger.
+  // Read-only: they inspect every cooperative's books and change nothing.
 
-  console.log(`
-✅ ${passed} checks passed (database checks pending port)`);
+  console.log('Database ledger');
+  const { default: prisma } = await import('../src/lib/prisma');
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+  } catch {
+    console.log('  – skipped: database not reachable (start it with `docker compose up -d`)');
+    console.log(`\n✅ ${passed} checks passed (database checks skipped)`);
+    await prisma.$disconnect();
+    return;
+  }
+
+  try {
+    const { AccountingService, ACCOUNT } = await import('../src/services/accountingService');
+    const { manilaToday, manilaDateOf, startOfDay, addDays, rangeOf } = await import('../src/lib/dates');
+    const today = manilaToday();
+    const endOfToday = startOfDay(addDays(today, 1));
+    const branches = await prisma.schoolBranch.findMany({ select: { id: true, name: true } });
+
+    await test('every completed POS sale has exactly one sale entry', async () => {
+      const sales = await prisma.transaction.findMany({ where: { status: 'COMPLETED' }, select: { id: true } });
+      const entries = await prisma.journalEntry.groupBy({ by: ['sourceId'], where: { sourceType: 'SALE' }, _count: true });
+      const counts = new Map(entries.map((e) => [e.sourceId, e._count]));
+      const bad = sales.filter((s) => counts.get(s.id) !== 1);
+      assert.equal(bad.length, 0, `${bad.length} sales without exactly one entry`);
+    });
+
+    await test('voided sales are not left in revenue', async () => {
+      const voided = await prisma.transaction.findMany({ where: { status: 'VOIDED' }, select: { id: true } });
+      for (const sale of voided) {
+        const lines = await prisma.journalLine.findMany({
+          where: { entry: { sourceId: sale.id }, account: { code: ACCOUNT.SALES } },
+          select: { debit: true, credit: true },
+        });
+        const net = lines.reduce((acc, l) => acc + toCents(Number(l.credit)) - toCents(Number(l.debit)), 0);
+        assert.equal(net, 0, `void ${sale.id} still has sales of ${net / 100}`);
+      }
+    });
+
+    await test('every journal entry balances', async () => {
+      const sums = await prisma.journalLine.groupBy({ by: ['entryId'], _sum: { debit: true, credit: true } });
+      const bad = sums.filter((s) => toCents(Number(s._sum.debit)) !== toCents(Number(s._sum.credit)));
+      assert.equal(bad.length, 0, `${bad.length} unbalanced entries`);
+    });
+
+    for (const branch of branches) {
+      const label = branch.name;
+      const ledger = await AccountingService.loadLedger(branch.id, { to: endOfToday });
+      const { accounts, postings } = ledger;
+
+      await test(`${label}: cash posted by today's cash sales equals those sales`, async () => {
+        const range = rangeOf(today, today);
+        const sales = await prisma.transaction.findMany({
+          where: { branchId: branch.id, status: 'COMPLETED', paymentMethod: 'CASH', createdAt: { gte: range.from, lt: range.to } },
+          select: { id: true, totalAmount: true },
+        });
+        const salesCents = sales.reduce((a, t) => a + toCents(Number(t.totalAmount)), 0);
+        const cashLines = await prisma.journalLine.findMany({
+          where: { entry: { sourceType: 'SALE', sourceId: { in: sales.map((s) => s.id) } }, account: { code: ACCOUNT.CASH } },
+          select: { debit: true },
+        });
+        assert.equal(cashLines.reduce((a, l) => a + toCents(Number(l.debit)), 0), salesCents);
+      });
+
+      await test(`${label}: trial balance and balance sheet balance as of today`, () => {
+        assert.ok(computeTrialBalance(accounts, postings, today).balanced);
+        const b = computeBalanceSheet(accounts, postings, today);
+        assert.ok(b.balanced, `difference ${b.difference}`);
+      });
+
+      await test(`${label}: cash flow reconciles to balance sheet cash for each preset period`, () => {
+        for (const id of ['this-month', 'last-month', 'this-quarter', 'year-to-date'] as const) {
+          const p = presetPeriod(id, today);
+          const c = computeCashFlow(accounts, postings, p.from, p.to);
+          assert.ok(c.reconciled, id);
+          const cashSection = computeBalanceSheet(accounts, postings, p.to).assets.find((s) => s.key === 'CASH');
+          assert.equal(c.endingCash, cashSection?.total ?? 0, id);
+        }
+      });
+
+      await test(`${label}: net surplus on the income statement flows into balance sheet equity`, () => {
+        const ys = `${today.slice(0, 4)}-01-01`;
+        const s = computeIncomeStatement(accounts, postings, ys, today);
+        const b = computeBalanceSheet(accounts, postings, today);
+        assert.equal(b.equity.lines.find((l) => l.name.includes('year to date'))!.amount, s.netIncome);
+      });
+
+      await test(`${label}: postings are dated on their Manila business day`, async () => {
+        const latest = await prisma.journalEntry.findFirst({ where: { branchId: branch.id }, orderBy: { date: 'desc' } });
+        if (latest) assert.ok(postings.some((p) => p.date === manilaDateOf(latest.date)));
+      });
+    }
+
+    await test('an unbalanced manual entry is refused by the service', async () => {
+      const branch = branches[0];
+      await assert.rejects(
+        AccountingService.postManualEntry(
+          { branchId: branch.id, userId: null },
+          {
+            description: 'test',
+            lines: [
+              { code: ACCOUNT.CASH, debit: '10', credit: '' },
+              { code: ACCOUNT.SALES, debit: '', credit: '9' },
+            ],
+          }
+        ),
+        /must be equal/
+      );
+    });
+
+    console.log(`\n✅ ${passed} checks passed`);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
 main().then(

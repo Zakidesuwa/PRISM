@@ -17,7 +17,7 @@ const PAGES: Record<string, string[]> = {
   manager: [
     '/', '/pos', '/member-lookup', '/daily-sales', '/daily-sales?tab=cash', '/daily-sales?tab=vendors',
     '/products', '/inventory', '/members', '/analytics', '/dividends',
-    '/reports', '/reports?tab=balance', '/reports?tab=cashflow', '/reports?tab=accounts', '/reports?tab=journal',
+    '/reports', '/reports?tab=balance', '/reports?tab=cashflow', '/reports?tab=accounts', '/reports?tab=trial', '/reports?tab=journal',
     '/users', '/settings',
   ],
   cashier: ['/pos', '/member-lookup', '/daily-sales', '/daily-sales?tab=cash'],

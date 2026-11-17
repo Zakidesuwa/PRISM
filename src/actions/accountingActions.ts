@@ -1,11 +1,17 @@
 'use server';
 
 import { branchAction } from '@/lib/action';
-import { AccountingService } from '@/services/accountingService';
+import { AccountingService, type ManualEntryInput } from '@/services/accountingService';
 import { SurplusService } from '@/services/surplusService';
 import { validateRates, type DistributionRates } from '@/lib/surplus/distribution';
 
-export async function createAccountAction(input: { code: string; name: string; type: string; cashFlowGroup?: string }) {
+export async function createAccountAction(input: {
+  code: string;
+  name: string;
+  subtype: string;
+  description?: string;
+  cashFlow?: string;
+}) {
   return branchAction(
     ['MANAGER'],
     (user) => AccountingService.createAccount({ branchId: user.branchId, userId: user.id }, input),
@@ -13,16 +19,30 @@ export async function createAccountAction(input: { code: string; name: string; t
   );
 }
 
-export async function postManualEntryAction(input: {
-  description: string;
-  debitCode: string;
-  creditCode: string;
-  amount: string;
-}) {
+export async function postManualEntryAction(input: ManualEntryInput) {
   return branchAction(
     ['MANAGER'],
     (user) => AccountingService.postManualEntry({ branchId: user.branchId, userId: user.id }, input),
     { revalidate: ['/reports', '/analytics', '/dividends'], message: () => 'Journal entry posted.' }
+  );
+}
+
+export async function reverseJournalEntryAction(entryId: number, reason: string) {
+  return branchAction(
+    ['MANAGER'],
+    (user) => AccountingService.reverseManualEntry({ branchId: user.branchId, userId: user.id }, entryId, reason),
+    { revalidate: ['/reports', '/analytics', '/dividends'], message: (result) => `JE-${result.reverses} reversed.` }
+  );
+}
+
+export async function setAccountActiveAction(accountId: number, isActive: boolean) {
+  return branchAction(
+    ['MANAGER'],
+    (user) => AccountingService.setAccountActive({ branchId: user.branchId, userId: user.id }, accountId, isActive),
+    {
+      revalidate: ['/reports'],
+      message: (result) => `Account ${result.code} ${result.isActive ? 'reactivated' : 'deactivated'}.`,
+    }
   );
 }
 

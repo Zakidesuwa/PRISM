@@ -27,6 +27,13 @@ export interface LedgerAccount {
   subtype: AccountSubtype;
   isActive: boolean;
   systemKey: string | null;
+  /**
+   * Where cash moved against this account lands on the cash flow statement,
+   * when it differs from the default for its subtype. For example, patronage
+   * refunds payable are a current liability, but paying them out is a
+   * financing activity (a distribution to members).
+   */
+  cashFlow?: CashFlowCategory | null;
 }
 
 /** One journal line, flattened with its entry's date. */
@@ -359,7 +366,7 @@ export function computeCashFlow(
   const sections: CashFlowSection[] = (['OPERATING', 'INVESTING', 'FINANCING'] as const).map((category) => {
     let totalCents = 0;
     const lines: StatementLine[] = [];
-    for (const a of accounts.filter((x) => cashFlowCategory(x.subtype) === category).sort(byCode)) {
+    for (const a of accounts.filter((x) => (x.cashFlow ?? cashFlowCategory(x.subtype)) === category).sort(byCode)) {
       const cents = flow.get(a.id) ?? 0;
       if (cents === 0) continue;
       totalCents += cents;

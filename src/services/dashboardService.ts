@@ -148,7 +148,7 @@ export class DashboardService {
       Promise.all(
         monthStarts.map(async (start) => ({
           label: monthLabel(start),
-          amount: (await AccountingService.incomeStatement(branchId, monthRange(start))).totalRevenue,
+          amount: (await AccountingService.incomeStatement(branchId, monthRange(start))).revenue.total,
         }))
       ),
       Promise.all(
@@ -159,7 +159,7 @@ export class DashboardService {
               from: startOfDay(start),
               to: dayRange(addDays(start, 6)).to,
             })
-          ).totalRevenue,
+          ).revenue.total,
         }))
       ),
       this.topItems(branchId, thisMonth, 5),
@@ -169,10 +169,10 @@ export class DashboardService {
     const ordersLastMonth = orders.find((row) => row.bucket === shiftMonth(today, -1).slice(0, 7))?.count ?? 0;
 
     return {
-      totalRevenue: current.totalRevenue,
-      revenueChange: percentChange(current.totalRevenue, previous.totalRevenue),
-      totalProfit: current.netSurplus,
-      profitChange: percentChange(current.netSurplus, previous.netSurplus),
+      totalRevenue: current.revenue.total,
+      revenueChange: percentChange(current.revenue.total, previous.revenue.total),
+      totalProfit: current.netIncome,
+      profitChange: percentChange(current.netIncome, previous.netIncome),
       totalOrders: ordersThisMonth,
       ordersChange: percentChange(ordersThisMonth, ordersLastMonth),
       monthly,

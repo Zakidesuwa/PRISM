@@ -3,10 +3,30 @@
 // Double-entry general ledger. Every module (sales, inventory, members, cash
 // counts, vendor payouts, surplus distribution) posts here, and the financial
 // statements are computed from the posted lines only.
-import { AccountType, Prisma } from '@prisma/client';
+import { AccountSubtype, AccountType, Prisma } from '@prisma/client';
 import prisma from '@/lib/prisma';
 import { ZERO, num, requireText, round2, toAmount, type Dec } from '@/lib/money';
-import type { DateRange } from '@/lib/dates';
+import { manilaDateOf, startOfDay, type DateRange } from '@/lib/dates';
+import {
+  SUBTYPE_LABELS,
+  cashFlowCategory,
+  typeOfSubtype,
+  validateAccountInput,
+  type CashFlowCategory,
+} from '@/lib/accounting/chartOfAccounts';
+import { validateJournalLines, type AccountRef } from '@/lib/accounting/ledger';
+import {
+  computeBalanceSheet,
+  computeCashFlow,
+  computeIncomeStatement,
+  computeTrialBalance,
+  type BalanceSheet,
+  type CashFlowStatement,
+  type IncomeStatement,
+  type LedgerAccount,
+  type Posting,
+  type TrialBalance,
+} from '@/lib/accounting/statements';
 import type { Ctx, Tx } from './context';
 import { AuditService } from './auditService';
 
@@ -39,40 +59,60 @@ export const ACCOUNT = {
 interface AccountSeed {
   code: string;
   name: string;
-  type: AccountType;
-  cashFlowGroup: 'CASH' | 'OPERATING' | 'INVESTING' | 'FINANCING';
+  subtype: AccountSubtype;
+  description?: string;
+  /** Only when it differs from the default for the subtype. */
+  cashFlow?: CashFlowCategory;
 }
 
-/** The chart of accounts every cooperative starts with. */
+/**
+ * The chart of accounts every cooperative starts with. Grouped by statement
+ * section (Dench's AccountSubtype), so the statements can show current vs
+ * non-current and operating vs other items.
+ */
 export const DEFAULT_ACCOUNTS: AccountSeed[] = [
-  { code: '1010', name: 'Cash on Hand', type: 'ASSET', cashFlowGroup: 'CASH' },
-  { code: '1020', name: 'Cash in Bank', type: 'ASSET', cashFlowGroup: 'CASH' },
-  { code: '1030', name: 'E-Wallet (GCash)', type: 'ASSET', cashFlowGroup: 'CASH' },
-  { code: '1100', name: 'Accounts Receivable - Members', type: 'ASSET', cashFlowGroup: 'OPERATING' },
-  { code: '1200', name: 'Merchandise Inventory', type: 'ASSET', cashFlowGroup: 'OPERATING' },
-  { code: '1500', name: 'Property and Equipment', type: 'ASSET', cashFlowGroup: 'INVESTING' },
-  { code: '2010', name: 'Accounts Payable - Suppliers', type: 'LIABILITY', cashFlowGroup: 'OPERATING' },
-  { code: '2020', name: 'Due to Consignors', type: 'LIABILITY', cashFlowGroup: 'OPERATING' },
-  { code: '2030', name: 'Sales Tax Payable', type: 'LIABILITY', cashFlowGroup: 'OPERATING' },
-  { code: '2100', name: 'Patronage Refund Payable', type: 'LIABILITY', cashFlowGroup: 'FINANCING' },
-  { code: '2110', name: 'Interest on Share Capital Payable', type: 'LIABILITY', cashFlowGroup: 'FINANCING' },
-  { code: '3010', name: "Members' Share Capital", type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '3100', name: 'Reserve Fund', type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '3110', name: 'Education and Training Fund (CETF)', type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '3120', name: 'Community Development Fund (CDF)', type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '3130', name: 'Optional Fund', type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '3900', name: 'Net Surplus Distributed', type: 'EQUITY', cashFlowGroup: 'FINANCING' },
-  { code: '4010', name: 'Sales', type: 'REVENUE', cashFlowGroup: 'OPERATING' },
-  { code: '4020', name: 'Consignment Commission Income', type: 'REVENUE', cashFlowGroup: 'OPERATING' },
-  { code: '4900', name: 'Other Income', type: 'REVENUE', cashFlowGroup: 'OPERATING' },
-  { code: '5010', name: 'Cost of Goods Sold', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6010', name: 'Spoilage and Wastage', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6020', name: 'Cash Shortage', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6100', name: 'Salaries and Allowances', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6200', name: 'Utilities', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6300', name: 'Supplies', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
-  { code: '6900', name: 'Miscellaneous Expense', type: 'EXPENSE', cashFlowGroup: 'OPERATING' },
+  { code: '1010', name: 'Cash on Hand', subtype: 'CASH', description: 'POS drawer cash and undeposited collections.' },
+  { code: '1020', name: 'Cash in Bank', subtype: 'CASH' },
+  { code: '1030', name: 'E-Wallet (GCash)', subtype: 'CASH' },
+  { code: '1100', name: 'Accounts Receivable - Members', subtype: 'CURRENT_ASSET', description: 'Charge sales not yet paid by members.' },
+  { code: '1200', name: 'Merchandise Inventory', subtype: 'CURRENT_ASSET', description: 'Stock at weighted-average cost; relieved by sales and spoilage.' },
+  { code: '1300', name: 'Prepaid Expenses', subtype: 'CURRENT_ASSET' },
+  { code: '1500', name: 'Property and Equipment', subtype: 'NON_CURRENT_ASSET' },
+  { code: '1510', name: 'Accumulated Depreciation', subtype: 'NON_CURRENT_ASSET', description: 'Contra-asset: carries a credit balance.' },
+  { code: '2010', name: 'Accounts Payable - Suppliers', subtype: 'CURRENT_LIABILITY', description: 'Deliveries received on account.' },
+  { code: '2020', name: 'Due to Consignors', subtype: 'CURRENT_LIABILITY', description: "Vendors' share of consigned-goods sales, payable on payout." },
+  { code: '2030', name: 'Sales Tax Payable', subtype: 'CURRENT_LIABILITY', description: 'Tax collected at the POS, payable on remittance.' },
+  { code: '2040', name: 'Accrued Expenses', subtype: 'CURRENT_LIABILITY' },
+  // Paying these out is a distribution to members: a financing activity.
+  { code: '2100', name: 'Patronage Refund Payable', subtype: 'CURRENT_LIABILITY', cashFlow: 'FINANCING' },
+  { code: '2110', name: 'Interest on Share Capital Payable', subtype: 'CURRENT_LIABILITY', cashFlow: 'FINANCING' },
+  { code: '2500', name: 'Loans Payable', subtype: 'NON_CURRENT_LIABILITY' },
+  { code: '3010', name: "Members' Share Capital", subtype: 'EQUITY', description: 'Paid-up capital contributed by members.' },
+  { code: '3100', name: 'Reserve Fund', subtype: 'EQUITY' },
+  { code: '3110', name: 'Education and Training Fund (CETF)', subtype: 'EQUITY' },
+  { code: '3120', name: 'Community Development Fund (CDF)', subtype: 'EQUITY' },
+  { code: '3130', name: 'Optional Fund', subtype: 'EQUITY' },
+  { code: '3900', name: 'Net Surplus Distributed', subtype: 'EQUITY', description: 'Offsets the surplus allocated by a finalized distribution.' },
+  { code: '4010', name: 'Sales', subtype: 'OPERATING_REVENUE', description: 'Net-of-tax sales of cooperative-owned goods.' },
+  { code: '4020', name: 'Consignment Commission Income', subtype: 'OPERATING_REVENUE', description: "The cooperative's share of consigned-goods sales." },
+  { code: '4900', name: 'Other Income', subtype: 'OTHER_INCOME', description: 'Includes cash overages from drawer counts.' },
+  { code: '4910', name: 'Interest Income', subtype: 'OTHER_INCOME' },
+  { code: '5010', name: 'Cost of Goods Sold', subtype: 'COST_OF_SALES' },
+  { code: '6010', name: 'Spoilage and Wastage', subtype: 'OPERATING_EXPENSE' },
+  { code: '6020', name: 'Cash Shortage', subtype: 'OTHER_EXPENSE', description: 'Drawer cash counted below the expected amount.' },
+  { code: '6100', name: 'Salaries and Allowances', subtype: 'OPERATING_EXPENSE' },
+  { code: '6200', name: 'Utilities', subtype: 'OPERATING_EXPENSE' },
+  { code: '6300', name: 'Supplies', subtype: 'OPERATING_EXPENSE' },
+  { code: '6400', name: 'Rent', subtype: 'OPERATING_EXPENSE' },
+  { code: '6500', name: 'Repairs and Maintenance', subtype: 'OPERATING_EXPENSE' },
+  { code: '6600', name: 'Depreciation', subtype: 'OPERATING_EXPENSE' },
+  { code: '6900', name: 'Miscellaneous Expense', subtype: 'OPERATING_EXPENSE' },
 ];
+
+/** The stored cash flow group: CASH for cash accounts, else the override or the subtype's default. */
+export function cashFlowGroupFor(subtype: AccountSubtype, override?: CashFlowCategory | null): string {
+  return subtype === 'CASH' ? 'CASH' : override ?? cashFlowCategory(subtype) ?? 'OPERATING';
+}
 
 export interface PostLine {
   code: string;
@@ -87,45 +127,25 @@ export interface PostEntryInput {
   lines: PostLine[];
 }
 
-export interface StatementLine {
-  code: string;
-  name: string;
-  amount: number;
+export type { BalanceSheet, CashFlowStatement, IncomeStatement, TrialBalance };
+
+/** One posted entry as the Journal tab shows it. */
+export interface JournalRow {
+  id: number;
+  date: string;
+  description: string;
+  sourceType: string;
+  canReverse: boolean;
+  reversedById: number | null;
+  reversesId: number | null;
+  lines: { code: string; name: string; debit: number; credit: number }[];
 }
 
-export interface IncomeStatement {
-  revenue: StatementLine[];
-  costOfSales: StatementLine[];
-  expenses: StatementLine[];
-  totalRevenue: number;
-  totalCostOfSales: number;
-  grossProfit: number;
-  totalExpenses: number;
-  netSurplus: number;
-}
-
-export interface BalanceSheet {
-  assets: StatementLine[];
-  liabilities: StatementLine[];
-  equity: StatementLine[];
-  totalAssets: number;
-  totalLiabilities: number;
-  totalEquity: number;
-  balanced: boolean;
-}
-
-export interface CashFlowSection {
-  items: StatementLine[];
-  total: number;
-}
-
-export interface CashFlowStatement {
-  operating: CashFlowSection;
-  investing: CashFlowSection;
-  financing: CashFlowSection;
-  netChange: number;
-  openingCash: number;
-  closingCash: number;
+export interface ManualEntryInput {
+  description: string;
+  /** Manila business date, YYYY-MM-DD. Defaults to today. */
+  date?: string;
+  lines: { code: string; debit: unknown; credit: unknown }[];
 }
 
 interface AccountSum {
@@ -133,6 +153,7 @@ interface AccountSum {
   code: string;
   name: string;
   type: AccountType;
+  subtype: AccountSubtype;
   cashFlowGroup: string;
   debit: Dec;
   credit: Dec;
@@ -145,19 +166,24 @@ function natural(row: AccountSum): Dec {
   return isDebitNormal(row.type) ? row.debit.sub(row.credit) : row.credit.sub(row.debit);
 }
 
-function toLines(rows: AccountSum[]): StatementLine[] {
-  return rows
-    .map((row) => ({ code: row.code, name: row.name, amount: num(natural(row)) }))
-    .filter((line) => line.amount !== 0);
+/** [from, to) instants -> inclusive Manila business dates, as Dench's statements expect. */
+function toKeys(range: DateRange): { from: string; to: string } {
+  return { from: manilaDateOf(range.from), to: manilaDateOf(new Date(range.to.getTime() - 1)) };
 }
-
-const total = (lines: StatementLine[]) =>
-  Math.round(lines.reduce((sum, line) => sum + line.amount, 0) * 100) / 100;
 
 export class AccountingService {
   static async ensureDefaultAccounts(db: Tx | typeof prisma, branchId: number) {
     await db.account.createMany({
-      data: DEFAULT_ACCOUNTS.map((account) => ({ ...account, branchId, isSystem: true })),
+      data: DEFAULT_ACCOUNTS.map((account) => ({
+        branchId,
+        code: account.code,
+        name: account.name,
+        type: typeOfSubtype(account.subtype),
+        subtype: account.subtype,
+        description: account.description ?? null,
+        cashFlowGroup: cashFlowGroupFor(account.subtype, account.cashFlow),
+        isSystem: true,
+      })),
       skipDuplicates: true,
     });
   }
@@ -287,185 +313,152 @@ export class AccountingService {
       code: account.code,
       name: account.name,
       type: account.type,
+      subtype: account.subtype,
       cashFlowGroup: account.cashFlowGroup,
       debit: byId.get(account.id)?.debit ?? ZERO,
       credit: byId.get(account.id)?.credit ?? ZERO,
     }));
   }
 
-  /** Merges same-code accounts, so a district-wide statement has one line per account. */
-  private static mergeByCode(rows: AccountSum[]): AccountSum[] {
-    const merged = new Map<string, AccountSum>();
-    for (const row of rows) {
-      const existing = merged.get(row.code);
-      if (existing) {
-        existing.debit = existing.debit.add(row.debit);
-        existing.credit = existing.credit.add(row.credit);
-      } else {
-        merged.set(row.code, { ...row });
-      }
+  /**
+   * Accounts and journal postings in the shape Dench's statement engine reads
+   * (src/lib/accounting/statements.ts). `branchId` null loads every
+   * cooperative, with same-code accounts merged so each account appears once.
+   * Only postings before `to` are loaded; `from` narrows it further when the
+   * caller only needs one period (the income statement).
+   */
+  static async loadLedger(
+    branchId: number | null,
+    window: { from?: Date; to: Date }
+  ): Promise<{ accounts: LedgerAccount[]; postings: Posting[] }> {
+    const [accounts, lines] = await Promise.all([
+      prisma.account.findMany({ where: branchId === null ? {} : { branchId }, orderBy: [{ code: 'asc' }, { id: 'asc' }] }),
+      prisma.journalLine.findMany({
+        where: {
+          entry: {
+            ...(branchId === null ? {} : { branchId }),
+            date: { ...(window.from ? { gte: window.from } : {}), lt: window.to },
+          },
+        },
+        select: { accountId: true, debit: true, credit: true, entry: { select: { id: true, date: true } } },
+      }),
+    ]);
+
+    // One canonical account per code (the first cooperative's), so a
+    // district-wide statement has one line per account.
+    const canonical = new Map<string, (typeof accounts)[number]>();
+    const canonicalIdOf = new Map<number, number>();
+    for (const account of accounts) {
+      if (!canonical.has(account.code)) canonical.set(account.code, account);
+      canonicalIdOf.set(account.id, canonical.get(account.code)!.id);
     }
-    return [...merged.values()].sort((a, b) => a.code.localeCompare(b.code));
+
+    return {
+      accounts: [...canonical.values()].map((account) => ({
+        id: account.id,
+        code: account.code,
+        name: account.name,
+        type: account.type,
+        subtype: account.subtype,
+        isActive: account.isActive,
+        systemKey: account.isSystem ? account.code : null,
+        cashFlow:
+          account.cashFlowGroup === 'CASH' ? null : (account.cashFlowGroup as CashFlowCategory),
+      })),
+      postings: lines.map((line) => ({
+        entryId: String(line.entry.id),
+        date: manilaDateOf(line.entry.date),
+        accountId: canonicalIdOf.get(line.accountId)!,
+        debit: num(line.debit),
+        credit: num(line.credit),
+      })),
+    };
   }
 
   static async incomeStatement(branchId: number | null, range: DateRange): Promise<IncomeStatement> {
-    const rows = this.mergeByCode(await this.accountSums(branchId, range));
-
-    const revenue = toLines(rows.filter((row) => row.type === 'REVENUE'));
-    const costOfSales = toLines(rows.filter((row) => row.type === 'EXPENSE' && row.code.startsWith('5')));
-    const expenses = toLines(rows.filter((row) => row.type === 'EXPENSE' && !row.code.startsWith('5')));
-
-    const totalRevenue = total(revenue);
-    const totalCostOfSales = total(costOfSales);
-    const totalExpenses = total(expenses);
-    const grossProfit = Math.round((totalRevenue - totalCostOfSales) * 100) / 100;
-
-    return {
-      revenue,
-      costOfSales,
-      expenses,
-      totalRevenue,
-      totalCostOfSales,
-      grossProfit,
-      totalExpenses,
-      netSurplus: Math.round((grossProfit - totalExpenses) * 100) / 100,
-    };
+    const { accounts, postings } = await this.loadLedger(branchId, range);
+    const keys = toKeys(range);
+    return computeIncomeStatement(accounts, postings, keys.from, keys.to);
   }
 
-  /** Position at the end of `asOf` (exclusive instant). */
+  /** Position at the end of the business day before `asOf` (an exclusive instant). */
   static async balanceSheet(branchId: number | null, asOf: Date): Promise<BalanceSheet> {
-    const rows = this.mergeByCode(await this.accountSums(branchId, { to: asOf }));
-
-    const assets = toLines(rows.filter((row) => row.type === 'ASSET'));
-    const liabilities = toLines(rows.filter((row) => row.type === 'LIABILITY'));
-    const equity = toLines(rows.filter((row) => row.type === 'EQUITY'));
-
-    // Revenue and expense accounts are never closed out; their running
-    // difference is the surplus earned to date. Distributions sit in 3900.
-    const earned = rows
-      .filter((row) => row.type === 'REVENUE' || row.type === 'EXPENSE')
-      .reduce((sum, row) => sum.add(row.credit).sub(row.debit), ZERO);
-    if (!earned.isZero()) {
-      equity.push({ code: '', name: 'Net Surplus Earned to Date', amount: num(earned) });
-    }
-
-    const totalAssets = total(assets);
-    const totalLiabilities = total(liabilities);
-    const totalEquity = total(equity);
-
-    return {
-      assets,
-      liabilities,
-      equity,
-      totalAssets,
-      totalLiabilities,
-      totalEquity,
-      balanced: Math.abs(totalAssets - totalLiabilities - totalEquity) < 0.005,
-    };
+    const { accounts, postings } = await this.loadLedger(branchId, { to: asOf });
+    return computeBalanceSheet(accounts, postings, manilaDateOf(new Date(asOf.getTime() - 1)));
   }
 
-  /**
-   * Direct-method cash flow. Each entry that touches a cash account is
-   * explained by its other lines, grouped by that account's cash flow group.
-   */
+  /** Direct-method cash flow (see computeCashFlow). */
   static async cashFlow(branchId: number | null, range: DateRange): Promise<CashFlowStatement> {
-    const entries = await prisma.journalEntry.findMany({
-      where: {
-        ...(branchId === null ? {} : { branchId }),
-        date: { gte: range.from, lt: range.to },
-        lines: { some: { account: { cashFlowGroup: 'CASH' } } },
-      },
-      include: { lines: { include: { account: true } } },
-    });
+    const { accounts, postings } = await this.loadLedger(branchId, { to: range.to });
+    const keys = toKeys(range);
+    return computeCashFlow(accounts, postings, keys.from, keys.to);
+  }
 
-    const buckets = new Map<string, { group: string; code: string; name: string; amount: Dec }>();
-    for (const entry of entries) {
-      for (const line of entry.lines) {
-        if (line.account.cashFlowGroup === 'CASH') continue;
-        const key = line.account.code;
-        const bucket = buckets.get(key) ?? {
-          group: line.account.cashFlowGroup,
-          code: line.account.code,
-          name: line.account.name,
-          amount: ZERO,
-        };
-        // A credit to the other account means cash came in.
-        bucket.amount = bucket.amount.add(line.credit).sub(line.debit);
-        buckets.set(key, bucket);
-      }
-    }
-
-    const section = (group: string): CashFlowSection => {
-      const items = [...buckets.values()]
-        .filter((bucket) => bucket.group === group && !bucket.amount.isZero())
-        .sort((a, b) => a.code.localeCompare(b.code))
-        .map((bucket) => ({ code: bucket.code, name: bucket.name, amount: num(bucket.amount) }));
-      return { items, total: total(items) };
-    };
-
-    const cashAt = async (to: Date) => {
-      const rows = await this.accountSums(branchId, { to });
-      return num(
-        rows
-          .filter((row) => row.cashFlowGroup === 'CASH')
-          .reduce((sum, row) => sum.add(row.debit).sub(row.credit), ZERO)
-      );
-    };
-
-    const [openingCash, closingCash] = await Promise.all([cashAt(range.from), cashAt(range.to)]);
-    const operating = section('OPERATING');
-    const investing = section('INVESTING');
-    const financing = section('FINANCING');
-
-    return {
-      operating,
-      investing,
-      financing,
-      netChange: Math.round((operating.total + investing.total + financing.total) * 100) / 100,
-      openingCash,
-      closingCash,
-    };
+  static async trialBalance(branchId: number | null, asOf: Date): Promise<TrialBalance> {
+    const { accounts, postings } = await this.loadLedger(branchId, { to: asOf });
+    return computeTrialBalance(accounts, postings, manilaDateOf(new Date(asOf.getTime() - 1)));
   }
 
   /** Chart of accounts with each account's current balance. */
   static async listAccounts(branchId: number) {
-    const [rows, flags] = await Promise.all([
+    const [rows, details] = await Promise.all([
       this.accountSums(branchId),
-      prisma.account.findMany({ where: { branchId }, select: { id: true, isSystem: true, isActive: true } }),
+      prisma.account.findMany({
+        where: { branchId },
+        select: { id: true, isSystem: true, isActive: true, description: true },
+      }),
     ]);
-    const flagById = new Map(flags.map((flag) => [flag.id, flag]));
+    const detailById = new Map(details.map((detail) => [detail.id, detail]));
 
     return rows.map((row) => ({
       id: row.id,
       code: row.code,
       name: row.name,
       type: row.type,
+      subtype: row.subtype,
+      subtypeLabel: SUBTYPE_LABELS[row.subtype],
       cashFlowGroup: row.cashFlowGroup,
+      description: detailById.get(row.id)?.description ?? null,
       balance: num(natural(row)),
-      isSystem: flagById.get(row.id)?.isSystem ?? false,
-      isActive: flagById.get(row.id)?.isActive ?? true,
+      isSystem: detailById.get(row.id)?.isSystem ?? false,
+      isActive: detailById.get(row.id)?.isActive ?? true,
     }));
   }
 
+  /**
+   * Adds an account. The group decides the type and where it shows on the
+   * statements; the code must fit the group's range (Dench's rules).
+   */
   static async createAccount(
     ctx: Ctx,
-    input: { code: string; name: string; type: string; cashFlowGroup?: string }
+    input: { code: string; name: string; subtype: string; description?: string; cashFlow?: string }
   ) {
-    const code = requireText(input.code, 'Account code', 10);
-    if (!/^\d{4}$/.test(code)) throw new Error('Account code must be four digits.');
-    const name = requireText(input.name, 'Account name', 80);
+    const subtype = input.subtype as AccountSubtype;
+    if (!(subtype in SUBTYPE_LABELS)) throw new Error('Choose an account group.');
 
-    const types: AccountType[] = ['ASSET', 'LIABILITY', 'EQUITY', 'REVENUE', 'EXPENSE'];
-    if (!types.includes(input.type as AccountType)) throw new Error('Choose an account type.');
+    const existing = await prisma.account.findMany({ where: { branchId: ctx.branchId }, select: { code: true } });
+    const error = validateAccountInput(
+      { code: input.code, name: input.name, subtype, description: input.description },
+      existing.map((account) => account.code)
+    );
+    if (error) throw new Error(error);
 
-    const groups = ['CASH', 'OPERATING', 'INVESTING', 'FINANCING'];
-    const cashFlowGroup = groups.includes(input.cashFlowGroup ?? '') ? input.cashFlowGroup! : 'OPERATING';
-    if (cashFlowGroup === 'CASH' && input.type !== 'ASSET') {
-      throw new Error('Only asset accounts can be cash accounts.');
-    }
+    const override = ['OPERATING', 'INVESTING', 'FINANCING'].includes(input.cashFlow ?? '')
+      ? (input.cashFlow as CashFlowCategory)
+      : null;
+    const code = input.code.trim();
+    const name = input.name.trim();
 
     const account = await prisma.account.create({
-      data: { branchId: ctx.branchId, code, name, type: input.type as AccountType, cashFlowGroup },
+      data: {
+        branchId: ctx.branchId,
+        code,
+        name,
+        type: typeOfSubtype(subtype),
+        subtype,
+        description: input.description?.trim() || null,
+        cashFlowGroup: cashFlowGroupFor(subtype, override),
+      },
     });
     await AuditService.log({
       branchId: ctx.branchId,
@@ -478,12 +471,35 @@ export class AccountingService {
     return { id: account.id, code, name };
   }
 
-  static async listJournal(branchId: number, range: DateRange, take = 300) {
+  /** Hides an account from new entries. System accounts, and accounts with a balance, stay active. */
+  static async setAccountActive(ctx: Ctx, accountId: number, isActive: boolean) {
+    const account = await prisma.account.findFirst({ where: { id: accountId, branchId: ctx.branchId } });
+    if (!account) throw new Error('Account not found.');
+    if (!isActive) {
+      if (account.isSystem) throw new Error('The system posts to this account automatically, so it stays active.');
+      const balance = (await this.listAccounts(ctx.branchId)).find((row) => row.id === accountId)?.balance ?? 0;
+      if (balance !== 0) throw new Error('Only accounts with a zero balance can be deactivated.');
+    }
+    await prisma.account.update({ where: { id: accountId }, data: { isActive } });
+    await AuditService.log({
+      branchId: ctx.branchId,
+      userId: ctx.userId,
+      action: isActive ? 'ACCOUNT_ACTIVATE' : 'ACCOUNT_DEACTIVATE',
+      entityType: 'Account',
+      entityId: accountId,
+    });
+    return { code: account.code, isActive };
+  }
+
+  static async listJournal(branchId: number, range: DateRange, take = 300): Promise<JournalRow[]> {
     const entries = await prisma.journalEntry.findMany({
       where: { branchId, date: { gte: range.from, lt: range.to } },
       orderBy: [{ date: 'desc' }, { id: 'desc' }],
       take,
-      include: { lines: { include: { account: { select: { code: true, name: true } } }, orderBy: { id: 'asc' } } },
+      include: {
+        reversedBy: { select: { id: true } },
+        lines: { include: { account: { select: { code: true, name: true } } }, orderBy: { id: 'asc' } },
+      },
     });
 
     return entries.map((entry) => ({
@@ -491,6 +507,11 @@ export class AccountingService {
       date: entry.date.toISOString(),
       description: entry.description,
       sourceType: entry.sourceType,
+      // Only hand-entered entries are reversed here; system postings are
+      // reversed by their own module (voids, reopened cash counts...).
+      canReverse: entry.sourceType === 'MANUAL' && !entry.reversedBy,
+      reversedById: entry.reversedBy?.id ?? null,
+      reversesId: entry.reversesId,
       lines: entry.lines.map((line) => ({
         code: line.account.code,
         name: line.account.name,
@@ -500,25 +521,56 @@ export class AccountingService {
     }));
   }
 
-  /** A simple two-line entry for anything the modules do not post themselves. */
-  static async postManualEntry(
-    ctx: Ctx,
-    input: { description: string; debitCode: string; creditCode: string; amount: unknown }
-  ) {
+  /**
+   * A journal entry with any number of lines, for anything the modules do not
+   * post themselves (expenses, supplier payments, bank deposits, equipment).
+   * Validated with Dench's double-entry rules: at least two accounts, each
+   * line a debit or a credit, debits equal credits, active accounts only.
+   */
+  static async postManualEntry(ctx: Ctx, input: ManualEntryInput) {
     const description = requireText(input.description, 'Description', 160);
-    const amount = toAmount(input.amount, 'Amount');
-    const debitCode = requireText(input.debitCode, 'Debit account', 10);
-    const creditCode = requireText(input.creditCode, 'Credit account', 10);
-    if (debitCode === creditCode) throw new Error('Debit and credit accounts must be different.');
 
+    let date: Date | undefined;
+    if (input.date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) throw new Error('Choose a valid date.');
+      if (input.date > manilaDateOf(new Date())) throw new Error('A journal entry cannot be dated in the future.');
+      // Noon keeps the entry inside its business day.
+      date = new Date(startOfDay(input.date).getTime() + 12 * 3600000);
+    }
+
+    const accounts = await prisma.account.findMany({ where: { branchId: ctx.branchId } });
+    const byCode = new Map(accounts.map((account) => [account.code, account]));
+    const refs = new Map<number, AccountRef>(
+      accounts.map((account) => [
+        account.id,
+        { id: account.id, code: account.code, name: account.name, type: account.type, isActive: account.isActive },
+      ])
+    );
+
+    const parseAmount = (value: unknown, label: string) =>
+      value === '' || value === null || value === undefined ? 0 : num(toAmount(value, label, { allowZero: true }));
+
+    const lines = (input.lines ?? []).map((line, index) => {
+      const account = byCode.get(String(line.code ?? '').trim());
+      return {
+        accountId: account?.id ?? -1,
+        debit: parseAmount(line.debit, `Line ${index + 1} debit`),
+        credit: parseAmount(line.credit, `Line ${index + 1} credit`),
+      };
+    });
+    const error = validateJournalLines(lines, refs);
+    if (error) throw new Error(error);
+
+    const codeById = new Map(accounts.map((account) => [account.id, account.code]));
     return prisma.$transaction(async (tx) => {
-      const entry = await this.postEntry(tx, ctx, {
+      const entry = await this.postEntry(tx, { ...ctx, at: date ?? ctx.at }, {
         description,
         sourceType: 'MANUAL',
-        lines: [
-          { code: debitCode, debit: amount },
-          { code: creditCode, credit: amount },
-        ],
+        lines: lines.map((line) => ({
+          code: codeById.get(line.accountId)!,
+          debit: new Prisma.Decimal(line.debit),
+          credit: new Prisma.Decimal(line.credit),
+        })),
       });
       await AuditService.log(
         {
@@ -527,12 +579,58 @@ export class AccountingService {
           action: 'JOURNAL_MANUAL',
           entityType: 'JournalEntry',
           entityId: entry?.id,
-          details: { description, debitCode, creditCode, amount: amount.toFixed(2) },
+          details: { description, lines: lines.length },
           at: ctx.at,
         },
         tx
       );
       return { id: entry!.id };
+    });
+  }
+
+  /**
+   * Corrects a manual entry the accountant's way (Dench's rule): entries are
+   * never edited or deleted; a mirror-image entry is posted instead.
+   */
+  static async reverseManualEntry(ctx: Ctx, entryId: number, reason: string) {
+    const why = requireText(reason, 'Reason', 160);
+    return prisma.$transaction(async (tx) => {
+      const entry = await tx.journalEntry.findFirst({
+        where: { id: entryId, branchId: ctx.branchId },
+        include: { lines: true, reversedBy: { select: { id: true } } },
+      });
+      if (!entry) throw new Error('Journal entry not found.');
+      if (entry.sourceType !== 'MANUAL') {
+        throw new Error('Only manual entries are reversed here. System postings are reversed by voiding or reopening their source.');
+      }
+      if (entry.reversedBy) throw new Error('This entry has already been reversed.');
+
+      const reversal = await tx.journalEntry.create({
+        data: {
+          branchId: ctx.branchId,
+          date: ctx.at ?? new Date(),
+          description: `Reversal of JE-${entry.id}: ${why}`,
+          sourceType: 'REVERSAL',
+          sourceId: String(entry.id),
+          reversesId: entry.id,
+          createdById: ctx.userId,
+          lines: {
+            create: entry.lines.map((line) => ({ accountId: line.accountId, debit: line.credit, credit: line.debit })),
+          },
+        },
+      });
+      await AuditService.log(
+        {
+          branchId: ctx.branchId,
+          userId: ctx.userId,
+          action: 'JOURNAL_REVERSE',
+          entityType: 'JournalEntry',
+          entityId: entry.id,
+          details: { reversal: reversal.id, reason: why },
+        },
+        tx
+      );
+      return { id: reversal.id, reverses: entry.id };
     });
   }
 
