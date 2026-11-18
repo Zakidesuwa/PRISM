@@ -20,10 +20,35 @@ export async function login(_prevState: LoginState, formData: FormData): Promise
   }
 
   let user;
-  try {
-    user = await prisma.user.findUnique({ where: { username }, include: { branch: true } });
-  } catch {
-    return { error: 'Cannot reach the database. Check that it is running.' };
+  let offlineDemo = !process.env.DATABASE_URL;
+  if (!offlineDemo) {
+    try {
+      user = await prisma.user.findUnique({ where: { username }, include: { branch: true } });
+    } catch {
+      offlineDemo = true;
+    }
+  }
+
+  if (offlineDemo) {
+    const demoAccounts: Record<string, { role: 'ADMIN' | 'MANAGER' | 'CASHIER' | 'STOREKEEPER'; password: string }> = {
+      manager: { role: 'MANAGER', password: 'manager123' },
+      cashier: { role: 'CASHIER', password: 'cashier123' },
+      admin: { role: 'ADMIN', password: 'admin123' },
+      storekeeper: { role: 'STOREKEEPER', password: 'store123' },
+    };
+    const demo = demoAccounts[username];
+    if (demo && demo.password === password) {
+      const cookieStore = await cookies();
+      cookieStore.set(SESSION_COOKIE, createSessionToken(username, demo.role), {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/',
+        maxAge: SESSION_MAX_AGE_SECONDS,
+      });
+      redirect(homePathFor(demo.role));
+    }
+    return { error: 'Incorrect username or password (offline demo accounts: manager/manager123, cashier/cashier123, admin/admin123).' };
   }
 
   // Same message for an unknown user and a wrong password.

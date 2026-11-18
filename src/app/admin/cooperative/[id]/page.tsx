@@ -17,12 +17,24 @@ interface PageProps {
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { id } = await params;
-  const coop = Number.isInteger(Number(id))
-    ? await prisma.schoolBranch.findUnique({ where: { id: Number(id) }, select: { name: true } })
-    : null;
+  let coopName: string | null = null;
+  if (Number.isInteger(Number(id))) {
+    try {
+      if (process.env.DATABASE_URL) {
+        const coop = await prisma.schoolBranch.findUnique({ where: { id: Number(id) }, select: { name: true } });
+        coopName = coop?.name ?? null;
+      }
+    } catch {
+      coopName = null;
+    }
+    if (!coopName) {
+      const detail = await AdminService.getCooperativeDetail(Number(id));
+      coopName = detail?.coop.name ?? null;
+    }
+  }
 
   return {
-    title: coop ? `${coop.name} · PRISM Management System` : 'Cooperative · PRISM Management System',
+    title: coopName ? `${coopName} · PRISM Management System` : 'Cooperative · PRISM Management System',
   };
 }
 

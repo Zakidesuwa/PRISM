@@ -18,6 +18,7 @@ import { MemberService } from '../src/services/memberService';
 import { ProductService } from '../src/services/productService';
 import { SalesService } from '../src/services/salesService';
 import { TransactionService, type PaymentMethod } from '../src/services/transactionService';
+import { GORDON_COLLEGE_STUDENTS } from '../src/lib/hardcodedMembers';
 import type { Ctx } from '../src/services/context';
 
 const MINIMAL = process.argv.includes('--minimal');
@@ -179,17 +180,32 @@ async function seedBranch(config: (typeof BRANCHES)[number], index: number, memb
 
   // ----- Members (their share capital funds the first stock purchase) -----
   const members = [];
-  for (const [position, fullName] of memberNames.entries()) {
-    members.push(
-      await MemberService.create(setupCtx, {
-        memberCode: `MEM-${config.key.toUpperCase()}-${String(position + 1).padStart(3, '0')}`,
-        fullName,
-        email: `${fullName.toLowerCase().replace(/[^a-z]+/g, '.')}@deped.gov.ph`,
-        phone: `09${17 + position}-555-${String(1000 + index * 37 + position * 11).slice(-4)}`,
-        shareCapital: 8000 + Math.floor(random() * 5) * 2500,
-        creditLimit: 1500,
-      })
-    );
+  if (config.key === 'gc') {
+    for (const student of GORDON_COLLEGE_STUDENTS) {
+      members.push(
+        await MemberService.create(setupCtx, {
+          memberCode: student.memberCode,
+          fullName: student.fullName,
+          email: student.email,
+          phone: student.phone ?? '0917-555-1234',
+          shareCapital: student.shareCapital,
+          creditLimit: student.creditLimit,
+        })
+      );
+    }
+  } else {
+    for (const [position, fullName] of memberNames.entries()) {
+      members.push(
+        await MemberService.create(setupCtx, {
+          memberCode: `MEM-${config.key.toUpperCase()}-${String(position + 1).padStart(3, '0')}`,
+          fullName,
+          email: `${fullName.toLowerCase().replace(/[^a-z]+/g, '.')}@deped.gov.ph`,
+          phone: `09${17 + position}-555-${String(1000 + index * 37 + position * 11).slice(-4)}`,
+          shareCapital: 8000 + Math.floor(random() * 5) * 2500,
+          creditLimit: 1500,
+        })
+      );
+    }
   }
 
   const restock = async (sku: string, when: Date, fraction = 1) => {

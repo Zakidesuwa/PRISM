@@ -28,6 +28,7 @@ import { useAction } from '@/lib/useAction';
 import { useToast } from '@/context/ToastContext';
 import { formatCurrency, formatManilaDateTime, formatManilaTime } from '@/utils/formatters';
 import { checkoutAction, searchMembersAction, voidTransactionAction } from '@/actions/posActions';
+import { searchHardcodedMembers } from '@/lib/hardcodedMembers';
 import type { ProductRow } from '@/services/productService';
 import type { MemberRow } from '@/services/memberService';
 import type { PaymentMethod, Receipt } from '@/services/transactionService';
@@ -208,16 +209,35 @@ export default function PosClient(props: Props) {
 
   function findMember(event: React.FormEvent) {
     event.preventDefault();
-    if (!memberQuery.trim()) return;
+    const q = memberQuery.trim();
+    if (!q) return;
+
+    const localMatches = searchHardcodedMembers(q);
+    if (localMatches.length === 1) {
+      setMember(localMatches[0]);
+      setMemberResults(null);
+      setMemberQuery('');
+      return;
+    }
+
+    if (localMatches.length > 1) {
+      setMemberResults(localMatches);
+    }
+
     run(
-      () => searchMembersAction(memberQuery),
+      () => searchMembersAction(q),
       (found) => {
-        if (found.length === 1) {
-          setMember(found[0]);
+        const combined = [...localMatches];
+        const seen = new Set(combined.map((m) => m.memberCode));
+        for (const item of found) {
+          if (!seen.has(item.memberCode)) combined.push(item);
+        }
+        if (combined.length === 1) {
+          setMember(combined[0]);
           setMemberResults(null);
           setMemberQuery('');
         } else {
-          setMemberResults(found);
+          setMemberResults(combined);
         }
       }
     );
