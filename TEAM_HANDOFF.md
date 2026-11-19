@@ -35,6 +35,7 @@ reading for any day instead.
 | Atashiwazakidaaaaaaaa | UI prototype from the Figma designs; first schema, core engine and members module | Page layouts and styles under `src/app/` |
 | Richard De Ocampo Jr. | Database integration; POS, inventory, products, members, daily sales, reports, surplus distribution, users, settings, admin; UI/UX pass; merging the team's work | `prisma/`, `src/services/`, `src/actions/`, `src/app/` |
 | Dench-Casaul | Daily Sales & Reconciliation and Financial Reports logic | `src/lib/dailySales/`, `src/lib/accounting/`, `scripts/verify-daily-sales.ts`, `scripts/verify-financial-reports.ts` |
+| Jommel | Joined November 18; area to be decided. Status in [JOMMEL_HANDOFF.md](JOMMEL_HANDOFF.md) | Branch `feat/jommel` |
 
 **About Dench's work.** It was built in a separate repository
 (github.com/CasaulDench/Dench_Prism) on an early copy of the project, and

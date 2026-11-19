@@ -343,7 +343,7 @@ export default function PosClient(props: Props) {
   return (
     <div className={styles.container}>
       <header className={styles.header} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <h1 className={styles.title}>Point of Sales</h1>
+        <h1 className={styles.title}>Point of Sale</h1>
         <div className={ui.row}>
           <form onSubmit={addFromSearch} className={styles.searchBox}>
             <ScanBarcode size={18} aria-hidden="true" className={styles.searchIcon} />
@@ -351,7 +351,7 @@ export default function PosClient(props: Props) {
               ref={searchRef}
               className={ui.input}
               style={{ paddingLeft: 38, paddingRight: 40, width: 300 }}
-              placeholder="Search or scan barcode, then Enter"
+              placeholder="Search or scan a barcode"
               aria-label="Search products or scan a barcode"
               value={search}
               onChange={(event) => setSearch(event.target.value)}

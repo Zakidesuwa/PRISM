@@ -1,7 +1,11 @@
+/* Fill the space under the 60px app header and inside the layout's 24px padding,
+   so the order panel and its Pay button always fit on screen. */
 .container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  height: calc(100vh - 108px);
+  height: calc(100dvh - 108px);
+  min-height: 480px;
   background-color: #f3f4f6;
   font-family: 'Inter', sans-serif;
 }
@@ -60,7 +64,9 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
+  grid-auto-rows: max-content;
   align-content: start;
+  min-height: 0;
   overflow-y: auto;
   padding-bottom: 24px;
 }
@@ -287,6 +293,7 @@
 
 .orderItems {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: 20px;
   display: flex;
