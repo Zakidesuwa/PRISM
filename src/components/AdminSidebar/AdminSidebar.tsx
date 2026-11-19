@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Boxes, House, Layers, LogOut, School, Settings, UserCog, type LucideIcon } from 'lucide-react';
+import { Boxes, House, LogOut, School, Settings, UserCog, type LucideIcon } from 'lucide-react';
 import { logout } from '@/app/actions/auth';
 // Shares the store sidebar's look so both halves of the system feel like one product.
 import styles from '../Sidebar/Sidebar.module.css';
@@ -39,9 +40,8 @@ export default function AdminSidebar() {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.logoArea}>
-        <div className={styles.sealPlaceholder}>
-          <Layers size={22} aria-hidden="true" />
-        </div>
+        {/* Decorative: the BEAM wordmark beside it names the panel. */}
+        <Image src="/logos/beam.png" alt="" width={40} height={40} loading="eager" className={styles.logoImage} />
         <div className={styles.logoText}>
           <span className={own.wordmark}>BEAM</span>
           <span className={styles.subText}>ADMIN PANEL</span>

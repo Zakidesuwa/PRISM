@@ -21,15 +21,11 @@
   border-bottom: 1px solid var(--gray-200);
 }
 
-.sealPlaceholder {
+/* PRISM logo in the store sidebar, BEAM logo in the admin sidebar. */
+.logoImage {
   width: 40px;
   height: 40px;
-  border-radius: 12px;
-  background-color: var(--primary-blue);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  object-fit: contain;
   flex-shrink: 0;
 }
 

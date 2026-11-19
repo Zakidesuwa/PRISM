@@ -1,5 +1,5 @@
-import { Layers } from 'lucide-react';
 import type { Metadata } from 'next';
+import Image from 'next/image';
 import { redirect } from 'next/navigation';
 import { getSession } from '@/lib/session';
 import LoginForm from './LoginForm';
@@ -28,9 +28,7 @@ export default async function LoginPage() {
     <div className={styles.page}>
       <div className={styles.card}>
         <div className={styles.brand}>
-          <div className={styles.seal}>
-            <Layers size={24} color="white" aria-hidden="true" />
-          </div>
+          <Image src="/logos/prism.png" alt="" width={44} height={44} preload className={styles.seal} />
           <div className={styles.brandText}>
             <span className={styles.prismText}>PRISM</span>
             <span className={styles.subText}>MANAGEMENT SYSTEM</span>

@@ -33,7 +33,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     // Skip static assets and metadata files, otherwise the redirect above
-    // would also block CSS, JS and images from loading.
-    '/((?!_next/static|_next/image|favicon.ico|sitemap.xml|robots.txt).*)',
+    // would also block CSS, JS and images from loading. logos/ holds the
+    // public/ brand images, which the login page shows before sign-in.
+    '/((?!_next/static|_next/image|logos/|favicon.ico|sitemap.xml|robots.txt).*)',
   ],
 };

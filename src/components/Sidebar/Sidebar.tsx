@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -10,7 +11,6 @@ import {
   FileText,
   HandCoins,
   IdCard,
-  Layers,
   LayoutDashboard,
   LogOut,
   Package,
@@ -96,9 +96,8 @@ export default function Sidebar({ userRole, badges = {} }: SidebarProps) {
   return (
     <aside className={styles.sidebar}>
       <div className={styles.logoArea}>
-        <div className={styles.sealPlaceholder}>
-          <Layers size={22} aria-hidden="true" />
-        </div>
+        {/* Decorative: the PRISM wordmark beside it names the product. */}
+        <Image src="/logos/prism.png" alt="" width={40} height={40} loading="eager" className={styles.logoImage} />
         <div className={styles.logoText}>
           <span className={styles.prismText}>PRISM</span>
           <span className={styles.subText}>MANAGEMENT SYSTEM</span>
