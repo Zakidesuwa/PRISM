@@ -11,7 +11,7 @@
 }
 
 .header {
-  padding: 24px 32px;
+  padding: 16px 24px;
   background-color: white;
   border-bottom: 1px solid #e5e7eb;
 }
@@ -27,15 +27,16 @@
   display: flex;
   flex: 1;
   overflow: hidden;
-  padding: 24px 32px;
-  gap: 24px;
+  padding: 16px 24px;
+  gap: 20px;
 }
 
 .leftPanel {
-  flex: 0 0 65%;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 16px;
 }
 
 .categoryTabs {
@@ -175,8 +176,10 @@
   color: #2563EB;
 }
 
+/* Wide enough that an item name, its quantity buttons and its total share one line. */
 .rightPanel {
-  flex: 1;
+  flex: 0 0 clamp(340px, 34%, 420px);
+  min-width: 0;
   background-color: white;
   border-radius: 16px;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
@@ -186,7 +189,7 @@
 }
 
 .orderHeader {
-  padding: 20px;
+  padding: 12px 16px;
   border-bottom: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
@@ -291,30 +294,46 @@
   font-weight: 600;
 }
 
+.memberArea {
+  padding: 12px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+/* The list gets every pixel the header, member box and totals leave, and scrolls. */
 .orderItems {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 20px;
+  padding: 0 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
 .orderItem {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.orderItem:last-child {
+  border-bottom: none;
 }
 
 .itemDetails {
   flex: 1;
+  min-width: 0;
 }
 
 .itemName {
   font-size: 14px;
   font-weight: 600;
   color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .itemUnitPrice {
@@ -325,21 +344,29 @@
 .itemControls {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
 .quantityControls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   background-color: #f3f4f6;
   border-radius: 8px;
-  padding: 4px;
+  padding: 3px;
+}
+
+.qtyValue {
+  min-width: 22px;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .qtyButton {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -354,34 +381,37 @@
   font-size: 14px;
   font-weight: 600;
   color: #111827;
-  min-width: 60px;
+  min-width: 64px;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
+/* Kept compact so the item list above it has room. */
 .orderSummary {
-  padding: 20px;
+  flex-shrink: 0;
+  padding: 12px 16px 16px;
   background-color: #f9fafb;
   border-top: 1px solid #e5e7eb;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 4px;
 }
 
 .summaryRow {
   display: flex;
   justify-content: space-between;
-  font-size: 14px;
+  font-size: 13px;
   color: #4b5563;
 }
 
 .summaryTotal {
   display: flex;
   justify-content: space-between;
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 700;
   color: #10b981;
-  margin-top: 8px;
-  padding-top: 12px;
+  margin-top: 4px;
+  padding-top: 8px;
   border-top: 1px dashed #e5e7eb;
 }
 
@@ -394,8 +424,8 @@
   color: white;
   border: none;
   border-radius: 8px;
-  padding: 16px;
-  font-size: 18px;
+  padding: 12px 16px;
+  font-size: 17px;
   font-weight: 700;
   cursor: pointer;
   margin-top: 8px;

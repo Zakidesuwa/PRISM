@@ -168,6 +168,10 @@ export default function PosClient(props: Props) {
 
   const searchRef = useRef<HTMLInputElement>(null);
   const memberRef = useRef<HTMLInputElement>(null);
+  const orderListRef = useRef<HTMLDivElement>(null);
+  // The product whose quantity just changed; the effect below scrolls its line into view.
+  // A new object each time, so tapping the same product twice still scrolls.
+  const [touched, setTouched] = useState<{ id: number } | null>(null);
 
   const categories = useMemo(
     () => ['All Items', ...Array.from(new Set(products.map((product) => product.category)))],
@@ -199,6 +203,7 @@ export default function PosClient(props: Props) {
       toast.warning(`Only ${product.available} of ${product.name} in stock.`);
       return;
     }
+    setTouched(quantity > 0 ? { id: product.id } : null);
     setCart((previous) => {
       const next = { ...previous };
       if (quantity <= 0) delete next[product.id];
@@ -206,6 +211,13 @@ export default function PosClient(props: Props) {
       return next;
     });
   }
+
+  // Lines are listed by product id, so a newly added item can land below the
+  // visible part of the order list. Bring the line that just changed into view.
+  useEffect(() => {
+    if (!touched) return;
+    orderListRef.current?.querySelector(`[data-product-id="${touched.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [touched]);
 
   function findMember(event: React.FormEvent) {
     event.preventDefault();
@@ -463,7 +475,7 @@ export default function PosClient(props: Props) {
           </div>
 
           {/* Member: scan the ID or type a name */}
-          <div style={{ padding: '0 16px 12px' }}>
+          <div className={styles.memberArea}>
             {member ? (
               <div className={ui.notice} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                 <IdCard size={20} aria-hidden="true" />
@@ -522,7 +534,7 @@ export default function PosClient(props: Props) {
             )}
           </div>
 
-          <div className={styles.orderItems}>
+          <div className={styles.orderItems} ref={orderListRef}>
             {lines.length === 0 ? (
               <EmptyState
                 icon={ShoppingBasket}
@@ -531,9 +543,11 @@ export default function PosClient(props: Props) {
               />
             ) : (
               lines.map(({ product, quantity }) => (
-                <div key={product.id} className={styles.orderItem}>
+                <div key={product.id} className={styles.orderItem} data-product-id={product.id}>
                   <div className={styles.itemDetails}>
-                    <div className={styles.itemName}>{product.name}</div>
+                    <div className={styles.itemName} title={product.name}>
+                      {product.name}
+                    </div>
                     <div className={styles.itemUnitPrice}>{formatCurrency(product.price)} / unit</div>
                   </div>
                   <div className={styles.itemControls}>
@@ -546,7 +560,9 @@ export default function PosClient(props: Props) {
                       >
                         {quantity === 1 ? <Trash2 size={14} aria-hidden="true" /> : <Minus size={14} aria-hidden="true" />}
                       </button>
-                      <span aria-live="polite">{quantity}</span>
+                      <span className={styles.qtyValue} aria-live="polite">
+                        {quantity}
+                      </span>
                       <button
                         type="button"
                         className={styles.qtyButton}
